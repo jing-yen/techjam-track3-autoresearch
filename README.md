@@ -99,10 +99,37 @@ organizer's script is worthless; they must match.
 
 ## Results
 
-Measured on **NVIDIA A100-80 PCIe** (NUS SoC cluster, node xgph1), **float32**,
-official timing protocol (warmup 20, repeats 100, rounds 3, alternating order).
-Candidate: `candidates/v_router.py`, TF32 **on** (organizer default). Full environment in
-`docs/environment.txt`. Raw data in `journal.jsonl`.
+Measured on **NVIDIA A100 PCIe** (NUS SoC cluster), **float32**, official
+timing protocol (warmup 20, repeats 100, rounds 3, alternating order). Full
+environment in `docs/environment.txt`. Raw data in `journal.jsonl` — every
+number below is a real measured run, not an estimate.
+
+### Turn-by-turn progress (geomean speedup, official-safe shapes)
+
+Each point is one autoresearch iteration that changed the leaderboard number,
+not a manual tuning pass. `journal.jsonl` has the full record per iteration.
+
+```mermaid
+xychart-beta
+    title "Geomean speedup across the research loop"
+    x-axis ["iter6\nv_compile", "iter9\nv_router (T5)", "iter13\n+T1 reduce", "iter14\n+S1 TF32-scope", "iter17\n+B10+S2+T6 AMP"]
+    y-axis "Geomean speedup" 0 --> 5
+    bar [2.25, 2.47, 2.61, 2.98, 3.92]
+```
+
+| iter | direction | node | median | geomean | what changed |
+|--|--|--|--|--|--|
+| 6 | measurement-fix | `v_compile` | 2.18x | 2.25x | SDPA + `torch.compile(max-autotune)`; first *honest* number (B8/B9 timing-protocol fix caught a 24% earlier inflation) |
+| 9 | dispatch | `v_router` | 2.27x | 2.47x | T5: per-shape dispatch over best/compile/fused — no new kernel code |
+| 13 | dispatch | `v_router` | 2.54x | 2.61x | T1 (`reduce-overhead` compile) folded in as a 4th route target |
+| 14 | precision-scope | `v_router` | 2.67x | 2.98x | S1: TF32-disable scoped to only the `compile` route, restoring the organizer's own TF32-on default everywhere else |
+| 17 | combined | `v_router2` | 2.96x | 3.92x | B10 (removed a per-forward device sync via a versioned mask cache) + S2 (re-routed #9/#10 to `reduce`) + T6 (fp16 `autocast` on #6/#8/#13, the only shapes it actually wins) |
+
+Two rejected directions, kept for the record: **bf16 autocast** (fails
+correctness on 13/13 shapes, max_abs up to 0.016 vs the 0.002 gate — its
+7-bit mantissa is too imprecise) and **AMP applied to every shape** (13/13
+correct but only *wins* on the 3 shapes already routed to it — confirmed
+optimal, not extended further).
 
 | # | B | S | d | H | passed | baseline ms | ours ms | speedup | routed to |
 |--|--|--|--|--|--|--|--|--|--|
