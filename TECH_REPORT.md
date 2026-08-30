@@ -29,17 +29,17 @@ Captured mechanically by `scripts/capture_env.sh` on the GPU node. Full dump in
 
 | | |
 |--|--|
-| GPU | NVIDIA A100-80 PCIe (compute capability 8.0), NUS SoC cluster node xgph1 |
-| GPU memory | 79.25 GiB usable (measured at the shape-14 OOM boundary) |
-| CPU | `<FILL: model, cores, threads>` |
-| System memory | `<FILL>` |
-| Disk | `<FILL: filesystem, free space>` |
-| OS / kernel | `<FILL>` |
-| Python | `<FILL>` |
-| PyTorch | `<FILL>` |
-| CUDA / cuDNN | `<FILL>` |
-| Triton | `<FILL>` |
-| Scheduler | Slurm, `gpu:a100-80:1`, one exclusive GPU per benchmark job |
+| GPU | NVIDIA A100-80 PCIe (compute capability 8.0), NUS SoC cluster (leaderboard numbers); A100-40 PCIe also used for parallel exploration jobs, same software stack |
+| GPU memory | 79.25 GiB usable on the A100-80 nodes (measured at the shape-14 OOM boundary) |
+| CPU | AMD EPYC 7352, 2 sockets × 24 cores (96 threads total) |
+| System memory | 251 GiB, 247 GiB available |
+| Disk | `cfs.comp.nus.edu.sg:/mnt/storpool/home`, 170 TiB total, 35 TiB free |
+| OS / kernel | Linux 6.8.0-138-generic (Ubuntu), x86_64 |
+| Python | 3.12.3 |
+| PyTorch | 2.10.0+cu128 |
+| CUDA / cuDNN | CUDA 12.8 (driver 580.173.02), cuDNN 9.10.02 |
+| Triton | 3.6.0 |
+| Scheduler | Slurm, `gpu:a100-80:1` (leaderboard) or `gpu:a100-40:1`/`gpu:h100-47:1` (exploration), one exclusive GPU per benchmark job |
 
 Development machines are Apple Silicon MacBooks with no CUDA. They run CPU
 correctness tests only; every timing number in this report comes from the GPU
