@@ -317,18 +317,20 @@ here, not just "considered."
   at the chunk level. Not yet attempted — no evidence yet on how much it
   would help, or whether Python-level overhead dominates enough that it
   wouldn't matter.
-- **L3 — regional/shared compilation across repeated identical layers.**
-  Our model has `num_layers` (2-6) *identical* transformer blocks per
-  shape. The report notes PyTorch's "regional compilation" work exists
-  specifically so repeated identical layers don't each trigger redundant
-  `torch.compile` work. We have never checked whether Inductor is
-  separately compiling each of our N identical blocks (redundant) or
-  sharing one compiled kernel across them. If it's the former, this could
-  cut `compile`/`reduce` route compile time meaningfully — directly
-  relevant to why `v_compile.py`'s max-autotune attempt on shape #14 never
-  finished (iter 7: killed at the 15-min limit still autotuning). Cheap to
-  check: inspect `torch._dynamo.config` / `TORCH_LOGS=recompiles` output on
-  one multi-layer shape before deciding whether to act on it.
+- **L3 — CLOSED: confirmed no dedup, explains iter 7's shape-14 finding,
+  no leaderboard action.** (journal iter 25, `tools/l3_autotune_count.py`).
+  Instrumented Inductor's autotune log for shape #1 (num_layers=4):
+  **24 total AUTOTUNE lines collapse to only 2 distinct GEMM shapes, each
+  occurring 12 times** — the identical `addmm(8192×128, 8192×128, 128×128)`
+  shape is autotuned separately at every one of its 12 occurrences across
+  the unrolled 4-layer graph, not deduplicated. This is the concrete
+  mechanism behind iter 7's shape-14 timeout: with 2 layers × several
+  large-matmul call sites, each ~100-300s autotune pass multiplies by
+  *occurrence count*, not distinct-shape count. Explanatory value for the
+  tech report; no leaderboard change, since `v_router2` already avoids
+  routing large-batch/large-seq shapes through `compile` for this exact
+  class of reason (established before this diagnosis, now backed by a
+  mechanism instead of just an observation).
 
 ## Done
 
