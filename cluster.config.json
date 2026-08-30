@@ -1,0 +1,15 @@
+{
+  "_comment": "Cluster-specific settings for runner.py. Fill the <PLACEHOLDERS> once for your SoC A100/H100 Slurm cluster. Env vars (RUNNER_MODE, RUNNER_SSH_HOST, RUNNER_PARTITION, ...) override any field here.",
+  "mode": "slurm",
+  "ssh_host": "",
+  "remote_workdir": "~/track3-autoresearch",
+  "partition": "<gpu-partition>",
+  "account": "",
+  "gres": "gpu:a100:1",
+  "time": "00:20:00",
+  "module_load": "module load cuda || true; source ~/miniconda3/bin/activate techjam || true",
+  "python": "python",
+  "device": "cuda",
+  "poll_interval_s": 10,
+  "max_wait_s": 3600
+}

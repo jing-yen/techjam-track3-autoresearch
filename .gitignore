@@ -1,0 +1,13 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+
+# Runner scratch (job dirs, logs, per-task result files)
+.runs/
+result_*.json
+
+# OS / editor
+.DS_Store
+*.swp
