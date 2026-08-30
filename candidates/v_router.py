@@ -1,5 +1,5 @@
 """
-T5 — per-shape dispatch.
+T5 -- per-shape dispatch.
 
 No single candidate wins every shape (leaderboard.md iter 6, official A100
 protocol): v_compile takes the small/launch-overhead shapes hardest (#2:
@@ -8,6 +8,15 @@ plain best.py wins #4. Taking the per-shape max over the three already-
 validated, already-correct candidates raises the aggregate median from
 ~2.1-2.2x (any single one) to ~2.5x, for free -- no new kernel code, just
 routing.
+
+Self-contained snapshot (like v_compile.py / v_fused_qkv.py): inlines all
+three implementations rather than importing candidates/best.py etc. The
+runner ships each candidate to the cluster as a lone file (see runner.py's
+run_slurm -- scp destination is a per-job temp path, siblings aren't
+copied), so a candidate that imports a sibling by relative __file__ path
+breaks off-repo. Learned the hard way: the first version of this file did
+exactly that and every shape failed with
+FileNotFoundError: .../router_official/best.py.
 
 Unknown shapes (not in the table below, e.g. #6, #14) fall back to
 v_compile, the best all-round generalist. This is intentionally NOT a
@@ -18,13 +27,12 @@ shapes get benchmarked.
 """
 from __future__ import annotations
 
-import importlib.util
-import os
+from typing import Optional
 
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 
-import torch_transformer_benchmark as ttb
 from torch_transformer_benchmark import BaselineTransformer, TransformerConfig
 
 if torch.cuda.is_available():
@@ -32,24 +40,246 @@ if torch.cuda.is_available():
     torch.backends.cudnn.allow_tf32 = False
     torch.set_float32_matmul_precision("highest")
 
-_HERE = os.path.dirname(os.path.abspath(__file__))
+STRICT_WEIGHT_COPY = False  # dispatch target may be the fused-qkv layout
 
 
-def _load_sibling(name: str):
-    """Import a sibling candidate file by path (not by package import --
-    candidates/ isn't guaranteed to be on sys.path)."""
-    path = os.path.join(_HERE, f"{name}.py")
-    spec = importlib.util.spec_from_file_location(f"_router_impl_{name}", path)
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
+# --------------------------------------------------------------------------- #
+# "best" impl -- plain SDPA, param names match the baseline (best.py).
+# --------------------------------------------------------------------------- #
+class _BestAttention(nn.Module):
+    def __init__(self, d_model: int, num_heads: int) -> None:
+        super().__init__()
+        self.d_model = d_model
+        self.num_heads = num_heads
+        self.head_dim = d_model // num_heads
+        self.q_proj = nn.Linear(d_model, d_model, bias=True)
+        self.k_proj = nn.Linear(d_model, d_model, bias=True)
+        self.v_proj = nn.Linear(d_model, d_model, bias=True)
+        self.out_proj = nn.Linear(d_model, d_model, bias=True)
+
+    def _split_heads(self, x: torch.Tensor) -> torch.Tensor:
+        b, s, _ = x.shape
+        return x.view(b, s, self.num_heads, self.head_dim).transpose(1, 2)
+
+    def forward(self, x, valid_token_mask=None, causal=False):
+        b, s, _ = x.shape
+        q = self._split_heads(self.q_proj(x))
+        k = self._split_heads(self.k_proj(x))
+        v = self._split_heads(self.v_proj(x))
+        if valid_token_mask is None:
+            context = F.scaled_dot_product_attention(q, k, v, is_causal=causal)
+        else:
+            neg_inf = float("-inf")
+            key_bias = torch.zeros(b, 1, 1, s, dtype=q.dtype, device=x.device).masked_fill(
+                ~valid_token_mask[:, None, None, :], neg_inf)
+            if causal:
+                cb = torch.ones(s, s, dtype=torch.bool, device=x.device).triu(diagonal=1)
+                attn_mask = key_bias + torch.zeros(s, s, dtype=q.dtype, device=x.device).masked_fill(cb, neg_inf)
+            else:
+                attn_mask = key_bias
+            context = F.scaled_dot_product_attention(q, k, v, attn_mask=attn_mask, is_causal=False)
+        context = context.transpose(1, 2).contiguous().view(b, s, self.d_model)
+        output = self.out_proj(context)
+        if valid_token_mask is not None:
+            output = output.masked_fill(~valid_token_mask[..., None], 0)
+        return output
 
 
-_IMPLS = {
-    "best": _load_sibling("best"),
-    "compile": _load_sibling("v_compile"),
-    "fused": _load_sibling("v_fused_qkv"),
-}
+class _BestBlock(nn.Module):
+    def __init__(self, d_model, num_heads, ffn_dim):
+        super().__init__()
+        self.norm1 = nn.LayerNorm(d_model)
+        self.attention = _BestAttention(d_model, num_heads)
+        self.norm2 = nn.LayerNorm(d_model)
+        self.ffn_in = nn.Linear(d_model, ffn_dim)
+        self.ffn_out = nn.Linear(ffn_dim, d_model)
+
+    def forward(self, x, valid_token_mask, causal):
+        x = x + self.attention(self.norm1(x), valid_token_mask, causal)
+        x = x + self.ffn_out(F.gelu(self.ffn_in(self.norm2(x)), approximate="none"))
+        if valid_token_mask is not None:
+            x = x.masked_fill(~valid_token_mask[..., None], 0)
+        return x
+
+
+class _BestTransformer(BaselineTransformer):
+    def __init__(self, config: TransformerConfig) -> None:
+        super().__init__(config)
+        opt_layers = nn.ModuleList()
+        for base_block in self.layers:
+            blk = _BestBlock(config.d_model, config.num_heads, config.ffn_dim)
+            blk.norm1 = base_block.norm1
+            blk.norm2 = base_block.norm2
+            blk.ffn_in = base_block.ffn_in
+            blk.ffn_out = base_block.ffn_out
+            blk.attention.q_proj = base_block.attention.q_proj
+            blk.attention.k_proj = base_block.attention.k_proj
+            blk.attention.v_proj = base_block.attention.v_proj
+            blk.attention.out_proj = base_block.attention.out_proj
+            opt_layers.append(blk)
+        self.layers = opt_layers
+
+    def forward(self, x, valid_token_mask=None):
+        has_padding = valid_token_mask is not None and not bool(valid_token_mask.all())
+        eff_mask = valid_token_mask if has_padding else None
+        for layer in self.layers:
+            x = layer(x, eff_mask, self.config.causal)
+        x = self.final_norm(x)
+        if has_padding:
+            x = x.masked_fill(~valid_token_mask[..., None], 0)
+        return x
+
+
+# --------------------------------------------------------------------------- #
+# "compile" impl -- same attention as _Best*, wrapped in torch.compile.
+# --------------------------------------------------------------------------- #
+_COMPILE_MODE = "max-autotune" if torch.cuda.is_available() else "default"
+
+
+class _CompileTransformer(BaselineTransformer):
+    def __init__(self, config: TransformerConfig) -> None:
+        super().__init__(config)
+        opt_layers = nn.ModuleList()
+        for base_block in self.layers:
+            blk = _BestBlock(config.d_model, config.num_heads, config.ffn_dim)
+            blk.norm1 = base_block.norm1
+            blk.norm2 = base_block.norm2
+            blk.ffn_in = base_block.ffn_in
+            blk.ffn_out = base_block.ffn_out
+            blk.attention.q_proj = base_block.attention.q_proj
+            blk.attention.k_proj = base_block.attention.k_proj
+            blk.attention.v_proj = base_block.attention.v_proj
+            blk.attention.out_proj = base_block.attention.out_proj
+            opt_layers.append(blk)
+        self.layers = opt_layers
+        self._compiled = None
+
+    def _forward_impl(self, x, valid_token_mask=None):
+        for layer in self.layers:
+            x = layer(x, valid_token_mask, self.config.causal)
+        x = self.final_norm(x)
+        if valid_token_mask is not None:
+            x = x.masked_fill(~valid_token_mask[..., None], 0)
+        return x
+
+    def forward(self, x, valid_token_mask=None):
+        has_padding = valid_token_mask is not None and not bool(valid_token_mask.all())
+        eff_mask = valid_token_mask if has_padding else None
+        if self._compiled is None:
+            try:
+                self._compiled = torch.compile(self._forward_impl, mode=_COMPILE_MODE)
+            except Exception:
+                self._compiled = self._forward_impl
+        return self._compiled(x, eff_mask)
+
+
+# --------------------------------------------------------------------------- #
+# "fused" impl -- fused QKV projection (v_fused_qkv.py).
+# --------------------------------------------------------------------------- #
+class _FusedAttention(nn.Module):
+    def __init__(self, d_model: int, num_heads: int) -> None:
+        super().__init__()
+        self.d_model = d_model
+        self.num_heads = num_heads
+        self.head_dim = d_model // num_heads
+        self.qkv = nn.Linear(d_model, 3 * d_model, bias=True)
+        self.out_proj = nn.Linear(d_model, d_model, bias=True)
+
+    def _split_heads(self, x: torch.Tensor) -> torch.Tensor:
+        b, s, _ = x.shape
+        return x.view(b, s, self.num_heads, self.head_dim).transpose(1, 2)
+
+    def forward(self, x, valid_token_mask=None, causal=False):
+        b, s, _ = x.shape
+        qkv = self.qkv(x)
+        q, k, v = qkv.split(self.d_model, dim=-1)
+        q = self._split_heads(q)
+        k = self._split_heads(k)
+        v = self._split_heads(v)
+        if valid_token_mask is None:
+            context = F.scaled_dot_product_attention(q, k, v, is_causal=causal)
+        else:
+            neg_inf = float("-inf")
+            key_bias = torch.zeros(b, 1, 1, s, dtype=q.dtype, device=x.device).masked_fill(
+                ~valid_token_mask[:, None, None, :], neg_inf)
+            if causal:
+                cb = torch.ones(s, s, dtype=torch.bool, device=x.device).triu(diagonal=1)
+                attn_mask = key_bias + torch.zeros(s, s, dtype=q.dtype, device=x.device).masked_fill(cb, neg_inf)
+            else:
+                attn_mask = key_bias
+            context = F.scaled_dot_product_attention(q, k, v, attn_mask=attn_mask, is_causal=False)
+        context = context.transpose(1, 2).contiguous().view(b, s, self.d_model)
+        output = self.out_proj(context)
+        if valid_token_mask is not None:
+            output = output.masked_fill(~valid_token_mask[..., None], 0)
+        return output
+
+
+class _FusedBlock(nn.Module):
+    def __init__(self, d_model, num_heads, ffn_dim):
+        super().__init__()
+        self.norm1 = nn.LayerNorm(d_model)
+        self.attention = _FusedAttention(d_model, num_heads)
+        self.norm2 = nn.LayerNorm(d_model)
+        self.ffn_in = nn.Linear(d_model, ffn_dim)
+        self.ffn_out = nn.Linear(ffn_dim, d_model)
+
+    def forward(self, x, valid_token_mask, causal):
+        x = x + self.attention(self.norm1(x), valid_token_mask, causal)
+        x = x + self.ffn_out(F.gelu(self.ffn_in(self.norm2(x)), approximate="none"))
+        if valid_token_mask is not None:
+            x = x.masked_fill(~valid_token_mask[..., None], 0)
+        return x
+
+
+class _FusedTransformer(BaselineTransformer):
+    def __init__(self, config: TransformerConfig) -> None:
+        super().__init__(config)
+        opt_layers = nn.ModuleList()
+        for base_block in self.layers:
+            blk = _FusedBlock(config.d_model, config.num_heads, config.ffn_dim)
+            blk.norm1 = base_block.norm1
+            blk.norm2 = base_block.norm2
+            blk.ffn_in = base_block.ffn_in
+            blk.ffn_out = base_block.ffn_out
+            blk.attention.out_proj = base_block.attention.out_proj
+            opt_layers.append(blk)
+        self.layers = opt_layers
+
+    def forward(self, x, valid_token_mask=None):
+        has_padding = valid_token_mask is not None and not bool(valid_token_mask.all())
+        eff_mask = valid_token_mask if has_padding else None
+        for layer in self.layers:
+            x = layer(x, eff_mask, self.config.causal)
+        x = self.final_norm(x)
+        if has_padding:
+            x = x.masked_fill(~valid_token_mask[..., None], 0)
+        return x
+
+
+def _fused_copy(baseline, optimized) -> None:
+    b = baseline.state_dict()
+    target = optimized.state_dict()
+    new = {}
+    for i in range(len(optimized.layers)):
+        p = f"layers.{i}.attention."
+        new[p + "qkv.weight"] = torch.cat(
+            [b[p + "q_proj.weight"], b[p + "k_proj.weight"], b[p + "v_proj.weight"]], dim=0)
+        new[p + "qkv.bias"] = torch.cat(
+            [b[p + "q_proj.bias"], b[p + "k_proj.bias"], b[p + "v_proj.bias"]], dim=0)
+    for k, v in b.items():
+        if k in target and k not in new and target[k].shape == v.shape:
+            new[k] = v
+    missing = [k for k in target if k not in new]
+    if missing:
+        raise RuntimeError(f"fused-qkv copy missing keys: {missing}")
+    optimized.load_state_dict(new, strict=True)
+
+
+# --------------------------------------------------------------------------- #
+# Router
+# --------------------------------------------------------------------------- #
+_IMPLS = {"best": _BestTransformer, "compile": _CompileTransformer, "fused": _FusedTransformer}
 
 # (batch_size, seq_len, d_model, num_heads) -> best-known implementation.
 # Source: leaderboard.md iter 6, A100-80, official timing protocol.
@@ -69,31 +299,25 @@ _ROUTE = {
 }
 _FALLBACK = "compile"
 
-STRICT_WEIGHT_COPY = False  # weights go into self._impl, not this wrapper
 
-
-def copy_model_weights(baseline: nn.Module, optimized: "UserOptimizedTransformer") -> None:
-    impl_module = _IMPLS[optimized._impl_name]
-    strict = bool(getattr(impl_module, "STRICT_WEIGHT_COPY", True))
-    custom_copy = getattr(impl_module, "copy_model_weights", None)
-    if callable(custom_copy):
-        custom_copy(baseline, optimized._impl)
+def copy_model_weights(baseline, optimized: "UserOptimizedTransformer") -> None:
+    if optimized._impl_name == "fused":
+        _fused_copy(baseline, optimized._impl)
     else:
-        ttb.copy_model_weights(baseline, optimized._impl, strict=strict)
+        import torch_transformer_benchmark as ttb
+        ttb.copy_model_weights(baseline, optimized._impl, strict=True)
 
 
 class UserOptimizedTransformer(BaselineTransformer):
     def __init__(self, config: TransformerConfig) -> None:
         super().__init__(config)
-        # Base's own layers/final_norm are dead weight once we delegate --
-        # drop them so we're not holding an extra randomly-initialized copy
-        # of every parameter (matters at the larger shapes).
+        # Base's own layers/final_norm are dead weight once we delegate.
         del self.layers
         del self.final_norm
 
         key = (config.batch_size, config.seq_len, config.d_model, config.num_heads)
         self._impl_name = _ROUTE.get(key, _FALLBACK)
-        self._impl = _IMPLS[self._impl_name].UserOptimizedTransformer(config)
+        self._impl = _IMPLS[self._impl_name](config)
 
     def forward(self, x, valid_token_mask=None):
         return self._impl(x, valid_token_mask)
