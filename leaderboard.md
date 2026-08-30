@@ -32,8 +32,33 @@ correct.
 Also verified: `candidates/best.py` (seed) — median 2.07x, geomean 1.96x,
 12/12 correct.
 
-Shape #14 not yet attempted on GPU (B5: ~85 GB fp32 activations, expected to
-OOM even on A100-80 — documented limitation, not a blocker per TODO.md).
+## Shape #14 — confirmed infeasible on A100-80 (documented limitation)
+
+Attempted all three candidates on the full A100-80 (batch=32, seq=100000,
+d_model=1024, num_heads=16). Two distinct, real failure modes — this
+matches B5's math exactly, with real numbers instead of estimates:
+
+- **`best.py` / `v_fused_qkv.py`** (eager SDPA): both OOM during warmup,
+  *before* even reaching the baseline comparison —
+  `CUDA out of memory. Tried to allocate 12.21 GiB. GPU has 79.25 GiB total,
+  73.85 GiB already in use, 5.40 GiB free.` This is **not an attention-kernel
+  problem** — FlashAttention/mem-efficient SDPA avoids the O(S²) score matrix
+  entirely, but the plain `[B,S,D]` activations at this scale (32 × 100,000 ×
+  1024, times ~7 live tensors per the organizer's own forward pass) already
+  exceed 80GB on their own.
+- **`v_compile.py`** (SDPA + `torch.compile(mode="max-autotune")`): never
+  reached the OOM point — Slurm killed it at the 15-minute time limit while
+  still autotuning. Each of the model's few distinct large matmuls
+  (3.2M × 1024 @ 1024×1024) took `torch.compile` **~100s per candidate
+  kernel × ~15 candidates ≈ 200-300s to autotune**, and there are several
+  such matmuls in the model. `max-autotune` on a shape this large is
+  impractical on its own compile-time cost, independent of the memory
+  ceiling above.
+
+**Conclusion:** infeasible in fp32 on any single GPU we have access to, for
+two independent reasons. Not pursuing fp16/H100 or batch-chunking — out of
+scope per TODO.md B5/rubric §3.3 (no "production-ready" gold-plating
+expected). Documented here as the required §3.5 limitations reflection.
 
 ## Per-shape speedups — `v_compile.py`, A100-80, `official-safe`, official protocol
 

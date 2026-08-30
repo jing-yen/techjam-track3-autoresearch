@@ -136,3 +136,30 @@ best, geomean-ranked). Next: shape #14 OOM-confirmation run (documented
 limitation, not expected to pass — see B5), then consider T5 (per-shape
 dispatch) now that the honest per-shape table shows where the real headroom
 is (#8 d=1024 barely moves at 1.09x; #2/#13 already near their ceiling).
+
+---
+
+### iter 7 · agent `opus-1` · direction `shape14-confirmation` · **B5 confirmed with real data**
+
+Ran shape #14 (batch=32, seq=100000, d_model=1024, num_heads=16) on A100-80
+for all three candidates, to replace B5's estimated math with real evidence.
+
+**Result — two independent, confirmed failure modes:**
+- `best.py` and `v_fused_qkv.py` both OOM during the optimized model's
+  warmup, before even reaching the baseline comparison: `Tried to allocate
+  12.21 GiB. GPU has 79.25 GiB total, 73.85 GiB already in use, 5.40 GiB
+  free.` This is activation memory, not an attention-algorithm problem —
+  both candidates already use flash/mem-efficient SDPA, which avoids the
+  O(S²) score matrix entirely. The plain `[B,S,D]` activations alone (32 ×
+  100,000 × 1024, ~7 live tensors) exceed 80GB.
+- `v_compile.py` never got that far — Slurm killed it at the 15-minute
+  time limit while still inside `max-autotune`'s kernel search. Each large
+  matmul (3.2M×1024 @ 1024×1024) took ~100s per candidate kernel × ~15
+  candidates to autotune, and the model has several such matmuls.
+  `max-autotune` is separately impractical here on compile-time cost alone.
+
+**Decision.** Confirmed infeasible in fp32 on any GPU available, for two
+independent reasons. Documented in `leaderboard.md` with the real error
+traces — this is the §3.5 limitations reflection, not a gap to keep
+chasing. Not pursuing fp16/H100/batch-chunking (out of scope per TODO.md B5
+and rubric §3.3's "no gold-plating" note).
