@@ -256,3 +256,16 @@ assumption for this torch/CUDA version.
 
 **Next when work resumes:** reconnect SSH, check `squeue`/`.runs/router_v2`
 and `.runs/` for v_amp GPU results, verify before writing any new number.
+
+---
+
+### iter 13 · agent `opus-1` · **router re-confirmed: 2.54x median / 2.61x geomean**
+
+SSH reconnected (the earlier disconnect was a dead ControlMaster socket —
+re-established with `ssh -fN xlogin`). The iter-11 `router_v2` job never
+actually reached the cluster (the ssh call failed before sbatch submission).
+Resubmitted clean as `router_v3`.
+
+**Confirmed, real numbers:** 12/12 `official-safe` shapes correct, median
+**2.54x**, geomean **2.61x** — up from 2.27x/2.47x pre-T1. `leaderboard.md`
+updated. This is now the number to cite.
