@@ -4,6 +4,7 @@
 #SBATCH --job-name=${JOB_NAME}
 ${PARTITION_LINE}
 ${ACCOUNT_LINE}
+${EXCLUDE_LINE}
 #SBATCH --gres=${GRES}
 #SBATCH --time=${TIME}
 #SBATCH --output=${LOGDIR}/%A_%a.out

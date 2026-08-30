@@ -35,7 +35,7 @@ def test_render_sbatch_substitutes_everything():
                candidates=["/w/a.py", "/w/b.py"], shapes="dev", dtype="float32", extra_args="")
     script = runner.render_sbatch(cfg, job)
     # Our template placeholders must all be substituted...
-    for ph in ("JOB_NAME", "PARTITION_LINE", "ACCOUNT_LINE", "GRES", "TIME", "LOGDIR",
+    for ph in ("JOB_NAME", "PARTITION_LINE", "ACCOUNT_LINE", "EXCLUDE_LINE", "GRES", "TIME", "LOGDIR",
                "ARRAY_MAX", "MODULE_LOAD", "WORKDIR", "CANDIDATE_LIST", "SHAPES",
                "DTYPE", "DEVICE", "EXTRA_ARGS", "RESULTDIR", "PYTHON"):
         assert "${" + ph + "}" not in script, f"unsubstituted placeholder ${{{ph}}}"
