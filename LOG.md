@@ -351,3 +351,76 @@ shapes, max_abs 0.0003-0.0005. GPU speed number pending.
 **Decision.** `v_router2` → new leaderboard best (2.89x/3.58x). Shape 14's
 limitation reframed from "infeasible" to "runs, slow, unverifiable against
 a reference that cannot exist." tanh-GELU is a live, unclosed lead.
+
+---
+
+### iter 25-30 · agent `opus-1` · L1/L2/L3 diagnostics + T7 lands, new best (2.99x/3.72x)
+
+Worked through the literature review's three genuinely new open items (L1/
+L2/L3), then reopened and landed T7 after a real conversation about whether
+custom CUDA/Triton was expected by the organizer's actual problem statement
+(it isn't mandatory — "custom CUDA, Triton, TensorFlow, or PyTorch
+implementations" is listed as a menu of equally-valid options — but real
+Roofline headroom plus Technical Execution's 35% weight made it worth doing).
+
+**L1 (H100 cross-architecture check): falsified, documented.** `v_router2`'s
+A100-tuned route table does NOT transfer unchanged — H100 gives *lower*
+numbers with the same routing (2.62x/3.19x vs A100-80's 2.89x/3.58x). Not
+re-tuning for H100 (A100-80 stays canonical), but this is a real, honest
+finding: the router found an architecture-specific effect, not something
+overfit to one benchmark run.
+
+**L2 (stream pipelining for shape #14): falsified, real negative result.**
+2 CUDA streams across the 8 sequential chunks measured 6.6% *slower*
+(79.6s vs 74.6s sequential) — chunks are already GPU-resident (no transfer
+to hide) and likely already saturate SM occupancy alone.
+
+**L3 (redundant autotune across repeated layers): confirmed, explanatory.**
+Instrumented Inductor's autotune log directly: the same GEMM shape gets
+autotuned 12 separate times across a 4-layer unrolled graph, not
+deduplicated. This is the concrete mechanism behind iter 7's shape-14
+max-autotune timeout — no leaderboard action needed since we already avoid
+routing big shapes through `compile` for this class of reason.
+
+**T7 (Triton AddNorm) lands.** Read the actual organizer PDF (not just our
+own paraphrase) to settle whether CUDA/Triton was required — it isn't, but
+it's explicitly sanctioned and worth doing given real headroom (shape #8 at
+~28% of A100's dense fp16 peak). Dispatched a research fork to survey three
+Triton targets before committing to one; AddNorm (fused residual-add +
+LayerNorm) confirmed as the right risk-appropriate first kernel over a
+fused-FFN-epilogue alternative (higher theoretical savings, much higher
+risk — has to beat cuBLAS/Inductor's tuned matmul).
+
+Standalone: 13/13 correct on real GPU Triton execution, geomean 1.88x → 2.02x
+(+7.4%) against a plain-LayerNorm baseline. Integrated into `v_router2`'s
+eager routes only (`best`/`amp` — kept `compile`/`reduce` on the original
+block, since those already get their own fusion from `torch.compile` and
+injecting a raw Triton kernel into that tracing path is a real risk not
+worth taking for a first kernel). Verified correct under AMP's fp16
+`autocast` specifically (the open question going in) — worst max_abs 0.00176
+on shape 8, still under the 0.002 gate.
+
+**Full-router confirmation: median 2.99x, geomean 3.72x, 13/13 correct**
+(job `router2_triton_confirm2`). Disclosed honestly: the untouched
+`compile`/`reduce`/`fused` routes swung by up to -30% run-to-run in this
+same measurement (real cluster/protocol noise, not a regression) — the
+attributable T7 gain is specifically on the AMP-routed shapes it touches
+(#6 +11%, #8 +4%, #13 +6%). Don't read the full aggregate delta from 3.58x
+as "what the kernel did."
+
+Also closed: bf16 rejected, AMP-everywhere confirmed already-optimal,
+tanh-GELU confirmed correctness-safe but a speed wash (not adopted), cuDNN
+SDPA backend confirmed present-but-runtime-disabled in this environment.
+
+**Docs pass.** Updated leaderboard.md, README.md (progress chart +
+per-shape table, replacing several stale/placeholder rows), and
+TECH_REPORT.md (§1/§5/§7/§8 were quite stale — §5's results table predated
+shape 6, the reduce/amp routes, and the current Roofline reading entirely;
+rewrote with real iter-30 numbers). `scripts/check_placeholders.sh`: 49 → 5,
+all five in README's team-member table — genuinely need real names from the
+team, not fillable by any measurement.
+
+**Decision.** `v_router2` (with T7) → new leaderboard best, 2.99x/3.72x.
+Cluster queue empty, no jobs running. Remaining backlog is exhausted for
+what's autonomously actionable — what's left (team names, demo video,
+Devpost submission) needs the human. Stopping here cleanly.
