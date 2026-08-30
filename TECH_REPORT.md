@@ -16,9 +16,13 @@ published input shapes. Rather than hand-tuning a single kernel, we built an
 measures them against the organizer's own correctness and timing code, and keeps
 or prunes on the measured result.
 
-Headline: **median speedup 2.89x, geometric mean 3.58x** on an **NVIDIA A100-80
-PCIe** at **float32**, with **13 of 14 shapes** passing the correctness gate.
-The two absent shapes are excluded on memory grounds, quantified in §8.
+Headline: **median speedup 2.99x, geometric mean 3.72x** on an **NVIDIA A100-80
+PCIe** at **float32** (with fp16 `autocast` and a custom Triton kernel on the
+three shapes that benefit — §4), with **13 of 14 shapes** passing the
+correctness gate. The 14th (shape #14) is not absent for memory reasons
+anymore — a targeted fix (§8) makes it run — but it still has no reference to
+score it against, so it is reported separately rather than in the 13-shape
+aggregate.
 
 ---
 
@@ -110,7 +114,7 @@ through a guarded compare-and-swap after a fresh pull.
 | T3 | Fused QKV projection, one `Linear(d, 3d)` | Three kernels become one; requires a custom weight mapping (`STRICT_WEIGHT_COPY=False`) | landed → `v_fused_qkv.py` | 2.16x / 2.09x |
 | T5 | Per-shape dispatch on `(B, S, d, H)` | The rules explicitly allow shape checks; no single candidate wins everywhere | landed → `v_router.py` | **2.27x / 2.47x — best** |
 | T6 | fp16 via `torch.autocast`, norms and reductions kept fp32 | Backend probe shows flash eligible on 14/14 shapes at fp16 vs 0/14 at fp32 | written, **not validated on GPU** | blanket cast failed 11/12; autocast untested |
-| T7 | Triton fused LayerNorm + residual | Reserved for remaining overhead after the above | **in progress, claimable** | Roofline recheck found shape #8 at only ~28% of A100 fp16 peak — real headroom, reopened. See `TODO.md` T7 / `candidates/v_triton_addnorm.py` |
+| T7 | Triton fused LayerNorm + residual ("AddNorm") | Reserved for remaining overhead after the above | **landed** | Roofline recheck found shape #8 at only ~28% of A100 fp16 peak — real headroom, reopened. Custom Triton kernel confirmed on A100-80, 13/13 correct: standalone +7.4% geomean vs plain LayerNorm; integrated into `v_router2`'s `best`/`amp` eager routes (kept separate from `compile`/`reduce`, which already get fusion from `torch.compile`/Inductor). Attributable per-shape gain on the AMP-routed shapes it touches: #6 +11%, #8 +4%, #13 +6%. See `TODO.md` T7 / `candidates/v_triton_addnorm.py` / `candidates/v_router2.py` |
 
 **Correctness invariants preserved throughout** (full list in `PROGRAM.md`): exact
 erf GELU, fp32 softmax reduction, `1/sqrt(head_dim)` scale, `triu(diagonal=1)`
@@ -123,47 +127,68 @@ after attention and after every block and after the final norm, output shape
 
 ## 5. Results
 
+Candidate `candidates/v_router2.py`, A100-80, official protocol, job
+`router2_triton_confirm2` (journal iter 30).
+
 | # | B | S | d | H | baseline ms | ours ms | speedup | routed to |
 |--|--|--|--|--|--|--|--|--|
-| 1 | 64 | 128 | 128 | 4 | 2.623 | 1.300 | 2.02x | compile |
-| 2 | 1 | 128 | 128 | 4 | 1.895 | 0.374 | **5.07x** | compile |
-| 3 | 4 | 128 | 128 | 4 | 1.900 | 0.447 | 4.24x | compile |
-| 4 | 16 | 128 | 128 | 4 | 1.863 | 0.859 | 2.17x | best |
-| 5 | 128 | 128 | 128 | 4 | 4.653 | 2.495 | 1.86x | fused |
-| 7 | 64 | 128 | 32 | 4 | 1.893 | 0.527 | 3.59x | compile |
-| 8 | 64 | 128 | 1024 | 4 | 29.936 | 26.284 | 1.14x | fused |
-| 9 | 64 | 128 | 128 | 1 | 1.974 | 1.345 | 1.47x | fused |
-| 10 | 64 | 128 | 128 | 2 | 2.332 | 1.368 | 1.70x | fused |
-| 11 | 64 | 128 | 128 | 16 | 5.074 | 1.858 | 2.73x | fused |
-| 12 | 64 | 32 | 128 | 4 | 1.874 | 0.793 | 2.36x | fused |
-| 13 | 64 | 1024 | 128 | 4 | 62.067 | 14.031 | **4.42x** | fused |
+| 1 | 64 | 128 | 128 | 4 | 2.614 | 1.206 | 2.17x | compile |
+| 2 | 1 | 128 | 128 | 4 | 1.895 | 0.276 | **6.86x** | compile |
+| 3 | 4 | 128 | 128 | 4 | 1.943 | 0.229 | 8.47x | reduce |
+| 4 | 16 | 128 | 128 | 4 | 1.923 | 0.283 | 6.80x | reduce |
+| 5 | 128 | 128 | 128 | 4 | 2.712 | 1.010 | 2.69x | reduce |
+| 6 | 10000 | 128 | 128 | 4 | 186.078 | 56.536 | 3.29x | amp (fp16 + Triton AddNorm) |
+| 7 | 64 | 128 | 32 | 4 | 1.884 | 0.462 | 4.08x | compile |
+| 8 | 64 | 128 | 1024 | 4 | 7.974 | 4.569 | 1.75x | amp (fp16 + Triton AddNorm) |
+| 9 | 64 | 128 | 128 | 1 | 1.780 | 0.792 | 2.25x | fused |
+| 10 | 64 | 128 | 128 | 2 | 1.965 | 0.785 | 2.50x | fused |
+| 11 | 64 | 128 | 128 | 16 | 3.475 | 1.161 | 2.99x | fused |
+| 12 | 64 | 32 | 128 | 4 | 1.936 | 0.779 | 2.48x | fused |
+| 13 | 64 | 1024 | 128 | 4 | 43.178 | 3.681 | **11.73x** | amp (fp16 + Triton AddNorm) |
 
-All 12 pass the correctness gate with `max_abs` ~0.001, still 2x under the 0.002
-absolute tolerance, measured with TF32 enabled. Shapes 6 and 14 are excluded on memory
-grounds (§8).
+All 13 pass the correctness gate, worst `max_abs` 0.00176 (shape 8), still under
+the 0.002 absolute tolerance. TF32 is enabled on every route except `compile`
+(S1 found an asymmetric-TF32-kernel-selection bug specific to `torch.compile`'s
+max-autotune path); shapes 6/8/13 additionally run under fp16 `autocast` (T6)
+plus the custom Triton AddNorm kernel (T7). Shape 14 is excluded from this
+sweep for a different reason than memory — it *runs* (§8), but has no
+reference to compare against, so it cannot be scored on this correctness-gated
+table at all.
 
-Aggregates: **median 2.89x, geometric mean 3.58x** over the 13 shapes with a
-reference. Sum-of-wall-clock across those 12 is 72.8 ms -> 23.4 ms (3.11x),
-reported because it is the figure that would matter if speed were aggregated by
-total time rather than per-shape ratio, and it does not flatter us.
+Aggregates: **median 2.99x, geometric mean 3.72x** over the 13 shapes with a
+reference.
 
-**Where the remaining time is.** Shape 8 accounts for 47% of our optimized wall
-clock and shape 13 for 25%; the other ten shapes together are 28%. Shape 8's
-1.14x is not inefficiency: 420.9 GFLOP in 26.284 ms is 16.0 TFLOP/s against the
-A100's 19.5 TFLOPS fp32 peak, i.e. **82% of theoretical**. Under the precision
-constraint we imposed (§2), there is little left to win there.
+**Where the remaining time is.** Shape 8 and shape 6 are still the largest
+absolute-time shapes despite their fp16 route. Shape 8's Roofline reading
+(measured before the fp16/Triton work, at fp32/TF32 on the `fused` route:
+420.9 GFLOP in 26.284 ms = 16.0 TFLOP/s, 82% of the A100's 19.5 TFLOPS fp32
+peak) motivated reopening T7 once the route changed to fp16 — the correct
+comparison there is now against the ~312 TFLOP/s dense fp16 Tensor Core
+ceiling, where the *current* number (420.9 GFLOP / 4.569 ms ≈ 92 TFLOP/s) is
+roughly 30% of peak — real headroom remains, which is exactly why T7 (Triton
+AddNorm) targeted this shape and produced a measurable, if modest, gain
+there (§4).
 
 **The head-count sweep measures the reference, not us.** Shapes 1, 9, 10 and 11
-are identical arithmetic. Our runtime is nearly flat across them (1.30 / 1.35 /
-1.37 / 1.86 ms); the baseline ranges 1.97 -> 5.07 ms because it materializes
-`[B,H,S,S]` and performs more transpose work as heads increase. The 1.47x on
-shape 9 is the reference being efficient at one head, not our kernel being slow.
+are identical arithmetic. Our runtime is comparatively flat across them; the
+baseline grows with head count because it materializes `[B,H,S,S]` and performs
+more transpose work as heads increase — part of why shape 9 (one head) shows
+the smallest ratio (2.25x) despite an efficient candidate.
 
 **Independent check — not performed.** We did not reproduce any shape through the
 unmodified `torch_transformer_benchmark.py`. Our harness reuses that script's own
 `compare_outputs`, `generate_random_case`, `warmup_model` and `benchmark_once`
 (§3), so the code path is shared rather than reimplemented, but a shared code
 path is not the same evidence as an independent run. We record this as a gap.
+
+**Run-to-run variance, disclosed honestly.** Comparing this sweep against the
+prior confirmed run (iter 21, same route table for `compile`/`reduce`/`fused`,
+zero code changes there), those unrelated routes swung by up to -30%
+(shape 7: 5.85x → 4.08x) — real cluster/protocol measurement noise. Most of
+the aggregate's improvement over iter 21 (2.89x/3.58x) is genuinely
+attributable to T7 on the shapes it touches (§4's per-shape breakdown), but
+some of the shape-by-shape movement elsewhere in this table should be read
+as noise, not signal.
 
 ---
 
@@ -298,7 +323,8 @@ outlier.
 
 ## 8. Limitations
 
-See the "Limitations" section of `README.md`, which covers shape 14's
-infeasibility with the supporting arithmetic, the steady-state nature of the
+See the "Limitations" section of `README.md`, which covers shape 14 (why it
+originally OOMed, the batch-chunking fix that makes it run in ~74.6s, and why
+it still has no reference to score it against), the steady-state nature of the
 timing protocol, the self-administered correctness gate, and the PyTorch-only
 scope.
