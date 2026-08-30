@@ -269,3 +269,23 @@ Resubmitted clean as `router_v3`.
 **Confirmed, real numbers:** 12/12 `official-safe` shapes correct, median
 **2.54x**, geomean **2.61x** — up from 2.27x/2.47x pre-T1. `leaderboard.md`
 updated. This is now the number to cite.
+
+---
+
+### iter 14 · agent `opus-1` · direction `precision-scope` · **new best: 2.67x median / 2.98x geomean**
+
+**Hypothesis.** The previous import-time TF32 disable was process-global and
+silently forced both the baseline and every router target to full fp32, even
+though only Inductor's max-autotune path had shown asymmetric TF32-kernel
+correctness drift. Scope the full-precision workaround to `compile` only and
+restore the organizer's TF32-on defaults for eager fused/reduce routes.
+
+**Result.** Job `s1_tf32` on A100-80, official protocol: all 12/12
+`official-safe` shapes pass. Median **2.667x**, geomean **2.977x**; worst
+max_abs is **0.001135**, still below the 0.002 absolute gate. Shape #8's
+baseline/optimized times fell from 29.95/26.28 ms to 7.88/6.13 ms. The gain is
+from matching the organizer's published default, not selecting a favorable
+non-default benchmark mode.
+
+**Decision.** New best. Keep the scoped precision policy and disclose the
+historical measurement correction in the leaderboard/report.

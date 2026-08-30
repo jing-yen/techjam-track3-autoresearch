@@ -65,33 +65,25 @@ writing code against them.
 
 ## MEASURED STATE — 2026-08-31, A100-80 (xgph1), fp32, official protocol
 
-`candidates/v_router.py`, **2.27x median / 2.47x geomean, 12/12 correct**
-(journal iter 9). Per-shape, with achieved arithmetic throughput computed from
-the appendix FLOP model and `attn blocks` = `batch x heads` (one attention
-program per (b,h) pair; A100 has **108 SMs**):
+`candidates/v_router.py`, **2.67x median / 2.98x geomean, 12/12 correct**
+(journal iter 14, job `s1_tf32`). TF32 is on at the organizer default for all
+non-max-autotune routes; the max-autotune route alone stays at full fp32 to
+avoid its measured asymmetric-kernel correctness drift.
 
-| # | speedup | opt ms | TFLOP/s | % of 19.5 fp32 peak | attn blocks | routed to |
-|--|--|--|--|--|--|--|
-| 2 | 5.07x | 0.374 | — | — | 4 | compile |
-| 13 | 4.42x | 14.031 | 8.6 | 44% | 256 | fused |
-| 3 | 4.24x | 0.447 | — | — | 16 | compile |
-| 7 | 3.59x | 0.527 | — | — | 256 | compile |
-| 11 | 2.73x | 1.858 | 4.0 | 21% | 1024 | fused |
-| 12 | 2.36x | 0.793 | — | — | 256 | fused |
-| 4 | 2.17x | 0.859 | — | — | 64 | best |
-| 1 | 2.02x | 1.300 | 5.8 | 30% | 256 | compile |
-| **5** | **1.86x** | 2.495 | 6.0 | 31% | 512 | fused |
-| **10** | **1.70x** | 1.368 | 5.5 | 28% | 128 | fused |
-| **9** | **1.47x** | 1.345 | 5.6 | 29% | 64 | fused |
-| **8** | **1.14x** | 26.284 | **16.0** | **82%** | 256 | fused |
-
-**Where the remaining time actually is** (share of the 55.4 ms optimized total):
-#8 = **47%**, #13 = 25%, all ten others = 28%. Ranking by speedup ratio hides
-this; #8 is half the machine's remaining work.
-
-Hardware ceilings used above, from the vendor datasheet: A100 **FP32 19.5
-TFLOPS**, **TF32 Tensor Core 156 TFLOPS**, 108 SMs
-(https://www.nvidia.com/content/dam/en-zz/Solutions/Data-Center/a100/pdf/nvidia-a100-datasheet-nvidia-us-2188504-web.pdf).
+| # | speedup | opt ms | routed to |
+|--|--|--|--|
+| 2 | 4.91x | 0.375 | compile |
+| 13 | 4.48x | 9.633 | fused |
+| 3 | 5.79x | 0.330 | reduce |
+| 7 | 3.52x | 0.525 | compile |
+| 11 | 2.91x | 1.198 | fused |
+| 12 | 2.35x | 0.803 | fused |
+| 4 | 4.97x | 0.379 | reduce |
+| 1 | 2.02x | 1.302 | compile |
+| 5 | 2.43x | 1.120 | reduce |
+| 10 | 2.37x | 0.805 | fused |
+| 9 | 2.13x | 0.807 | fused |
+| 8 | 1.29x | 6.125 | fused |
 
 ---
 
@@ -128,80 +120,36 @@ TFLOPS**, **TF32 Tensor Core 156 TFLOPS**, 108 SMs
   *Note:* `select_shapes()` at `bench_harness.py:269-271` still hard-codes the
   exclusion. Either pass `--shapes 6` explicitly or widen `official-safe`.
 
-## Open — the four sub-2x shapes, diagnosed
+## Open — post-S1 follow-ups
 
 Read `docs/research-sub2x.md` for the full derivation. Summary of the causes,
 because three of the four are **not** the same problem:
 
-- **#8 (1.14x) — at the fp32 arithmetic ceiling, not inefficient.** 420.9 GFLOP
-  in 26.28 ms is **16.0 TFLOP/s against a 19.5 TFLOP/s fp32 peak, i.e. 82%.**
-  There is no meaningful headroom *at this precision*. See S1 — the precision is
-  the lever, not the kernel.
-- **#9 (1.47x) / #10 (1.70x) — the baseline is unusually good here, not the
-  candidate bad.** All of #1/#9/#10/#11 are the same 7.52 GFLOP. The candidate
-  is flat across them (1.30/1.35/1.37/1.86 ms); the **baseline** ranges
-  1.97 -> 5.07 ms because it materializes `[B,H,S,S]` and does more
-  transpose/reshape work as heads increase. The speedup spread across the head
-  sweep is therefore a property of the reference, not of our kernel. Genuine but
-  smaller levers in S2.
-- **#5 (1.86x) — no headroom; the ratio drop is an artifact of scaling.** #5 is
-  exactly 2x #1's work. Our candidate scales near-linearly (1.300 -> 2.495 ms,
-  1.92x) because it is already efficient; the baseline scales *sub*-linearly
-  (2.623 -> 4.653 ms, 1.77x) because at B=64 it was still partly overhead-padded
-  and B=128 amortizes that. Two well-behaved curves with different slopes
-  produce a falling ratio. **Do not spend GPU time here.** Document it.
-
-- **S1 — RESOLVE THE TF32 QUESTION. Highest value and highest risk in the
-  queue.** `candidates/v_router.py:39-42` sets `allow_tf32 = False` and
-  `set_float32_matmul_precision("highest")` **at module import, outside any
-  function**. These are process-global PyTorch flags, and the harness sets its
-  own value earlier (`bench_harness.py:313-314`, default `True`) before
-  importing the candidate — so **the candidate's import silently overrides the
-  harness and de-TF32s the baseline as well.**
-  Two consequences, and they pull in opposite directions:
-  1. *Integrity.* The organizer's script defaults to `--allow-tf32` **on**
-     (`torch_transformer_benchmark.py:687`, `--matmul-precision high` at `:638`).
-     Our 2.47x is therefore measured in a **non-default configuration in which
-     both sides are handicapped to ~1/8 of the card's TF32 throughput.** The
-     comparison is internally fair, but it is not the organizer's default, and
-     on GEMM-heavy shapes a slowed baseline plausibly *inflates* our ratio.
-     **This must be disclosed in the tech report whether or not we change it.**
-  2. *Opportunity.* #8 at 82% of the fp32 ceiling has ~8x of theoretical
-     headroom sitting behind a flag we disabled.
-  *Why it was disabled:* commit `8010964` found Inductor's `max-autotune`
-  autotuner selecting TF32 GEMM kernels for the **candidate** while the baseline
-  used cuBLAS, drifting ~0.005 against `atol=0.002` on 9/12 shapes. That is an
-  **asymmetry between two different TF32 implementations**, not evidence that
-  TF32 itself fails the gate.
-  *Note the routing:* **#8 routes to `fused`, which is not compiled at all.** The
-  Inductor problem cannot arise on that path. The global pin is a sledgehammer
-  aimed at a compile-path bug, applied to a shape that never touches the
-  compiler.
-  *Action:* one sweep with `--allow-tf32` left at the harness default and the
-  candidate's import-time override **removed**, measuring correctness and speed
-  for all 12. Then a second with the override scoped to the compiled path only.
-  *Falsify:* if TF32-on fails the gate on the `fused` path for #8 too, the pin
-  is justified as-is — record that and close S1.
-  *Expect:* #8 absolute time falls sharply; the **ratio** may fall, rise, or hold,
-  because the baseline accelerates too. **Report whichever we measure. Do not
-  choose the configuration that produces the larger number without saying so.**
+- **#8 remains the lowest-ratio shape (1.29x), but S1 cut optimized time from
+  26.28 ms to 6.13 ms by restoring TF32 on its eager fused-QKV route.** This
+  confirms precision was the lever; any further work should compare against
+  the TF32 ceiling, not the old fp32 ceiling.
+- **#9/#10 are no longer sub-2x** (2.13x/2.37x, ~0.81 ms optimized each), but
+  S2 can still cheaply test whether a compiled route is faster.
+- **#5 is now 2.43x at 1.12 ms** after TF32 restoration. Do not optimize it
+  independently unless a shared variant improves the aggregate.
 
 - **S2 — Re-test the compiled path on #9 and #10.** Both currently route to
-  `fused`. #1, which is the same arithmetic, routes to `compile` and beats them
-  (2.02x vs 1.47x/1.70x). The router was built from a sweep taken **before**
-  B10's sync was known and before `v_compile_reduce.py` existed, so the
-  head-count shapes may be mis-routed. Cheap: they ride along in any sweep.
+  `fused`. #1, which is the same arithmetic, routes to `compile`; #9/#10 now
+  score 2.13x/2.37x after S1, but their route comparison predates both the B10
+  sync finding and `v_compile_reduce.py`, so the head-count shapes may be
+  mis-routed. Cheap: they ride along in any sweep.
   *Falsify:* compile does not beat fused on #9/#10 -> routing already optimal,
   close it.
 
 - **S3 — #5 and the large-batch regime: document, do not optimize.** Evidence
-  above. Falsify: if a variant beats 1.86x on #5 without regressing #1, this
+  above. Falsify: if a variant beats 2.43x on #5 without regressing #1, this
   reasoning was wrong.
 
 ## Open — zero GPU cost, do these first
 
 - **D1 — the §3.5 deliverables. NOW THE TOP ITEM IN THE QUEUE.** A defensible
-  2.47x is banked; ~33 hours remain; the write-up is unstarted beyond
+  2.98x geomean is banked; the write-up is unstarted beyond
   scaffolding. `README.md` and `TECH_REPORT.md` exist with **49 `<FILL>`
   placeholders** guarded by `scripts/check_placeholders.sh`. Every one of them
   is now fillable from `leaderboard.md` and `journal.jsonl` — no new
@@ -229,14 +177,12 @@ because three of the four are **not** the same problem:
 
 ## Open — the measurement that unblocks the rest
 
-- **M1 — one sweep, three questions.** S1 (TF32 on/off), S2 (#9/#10 routed to
-  compile), and **T1** in a single job. `v_amp.py` is CPU-smoke-tested
-  only and is the single highest-variance item left: fp16 unlocks flash on
-  **all 14 shapes** (vs 0 at fp32) plus tensor cores, but the blanket-cast
-  attempt already failed the gate on 11/12. T1 has since landed
-  (`v_compile_reduce.py`, 2.29x/2.39x) so it no longer needs a slot.
-  *Falsify:* no configuration beats 2.47x geomean -> freeze `v_router`, spend
-  every remaining hour on D1.
+- **M1 — remaining sweep: S2 + T6.** S1 and T1 are resolved. `v_amp.py` is
+  CPU-smoke-tested only and is the highest-variance candidate left: fp16
+  unlocks flash on all 14 shapes, but the blanket-cast attempt failed the gate
+  on 11/12. Compare it alongside explicit compile routes for #9/#10.
+  *Falsify:* no correct configuration beats the 2.98x geomean router -> freeze
+  `v_router` and spend the remaining time on D1.
 
 ## Open — shape 14
 
@@ -262,8 +208,8 @@ because three of the four are **not** the same problem:
   0/14 at fp32** — including #8 at head_dim=256 and #14 at head_dim=64. So fp16
   buys tensor cores **and** the flash backend at once. See S1: this and TF32 are
   the same lever at two different strengths, aimed at the same shape.
-- **T4 — memory-layout cleanups** feeding SDPA `[B,H,S,D]`. Small, and #8 at 82%
-  of the fp32 ceiling shows layout is not what limits the shape that matters.
+- **T4 — memory-layout cleanups** feeding SDPA `[B,H,S,D]`. Small; after S1,
+  profile against the TF32-enabled #8 result before assuming layout is limiting.
 - **T7 — custom Triton kernels.** Correctly at the bottom. With ~32 hours left
   and D1 unstarted, **do not start this.**
 - **T2, T3 — superseded.** Both landed as `v_compile.py` / `v_fused_qkv.py` and
@@ -274,6 +220,14 @@ because three of the four are **not** the same problem:
 _(none yet — claim something above)_
 
 ## Done
+
+- **S1 — TF32 scope fixed and measured** (iter 14, job `s1_tf32`). The old
+  import-time blanket disable silently forced both baseline and candidate to
+  full fp32. The workaround now applies only to the max-autotune route that
+  exhibited asymmetric TF32 kernel drift; other routes restore the organizer's
+  `allow_tf32=True`, `matmul_precision="high"` defaults. A100-80 official
+  sweep: **12/12 correct, 2.67x median / 2.98x geomean**, max_abs 0.001135
+  against atol 0.002. Shape #8 optimized time fell 26.28 ms -> 6.13 ms.
 
 - **T1 — `torch.compile(mode="reduce-overhead")`** → `candidates/v_compile_reduce.py`.
   A100-80, official protocol: 12/12 correct, **median 2.29x / geomean 2.39x
@@ -307,9 +261,8 @@ _(none yet — claim something above)_
   whichever of best/v_compile/v_fused_qkv empirically won it (measured, not
   the head_dim/backend-table heuristic originally proposed — the three
   candidates' relative strengths didn't reduce to one clean rule across the
-  12-shape sample). A100-80, official protocol: 2.27x median / 2.47x
-  geomean, beats every single candidate, 12/12 correct. New leaderboard
-  best (iter 9). (agent: opus-1)
+  12-shape sample). Latest A100-80 official-protocol confirmation after S1:
+  **2.67x median / 2.98x geomean**, 12/12 correct (iter 14). (agent: opus-1)
 - **T0 — SDPA seed** → `candidates/best.py`. Correctness verified on CPU on dev
   shapes + `official-safe`, with and without padding. **Caveat:** the CPU run
   cannot expose B1, B2 or B5, and the claimed shape-#14 capability is false (B1).
@@ -352,4 +305,3 @@ Read directly from TechJam Track 3 §3.1-3.7, not second-hand.
 
 _Humans: drop ideas here as free text — an agent will formalize each into a
 proper hypothesis + candidate and treat it as high priority._
-

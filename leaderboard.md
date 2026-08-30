@@ -7,13 +7,25 @@ replace only if strictly better).
 |--|--|
 | best candidate | `candidates/v_router.py` (T5: per-shape dispatch over 4 implementations) |
 | node_id | `v_router` |
-| correctness | ✅ A100-80, `official-safe` (12/12 shapes), float32 |
-| median speedup | **2.54x** |
-| geomean speedup | **2.61x** |
-| dtype | float32 |
+| correctness | ✅ A100-80, `official-safe` (12/12 shapes), float32, TF32 **on** (organizer default) — max_abs ~0.001, still 2x under the 0.002 gate |
+| median speedup | **2.67x** |
+| geomean speedup | **2.98x** |
+| dtype | float32 (TF32 tensor cores enabled, matching the organizer's own default config — see S1 below) |
 | device | NUS SoC cluster, A100-80 PCIe (`gpu:a100-80:1`) |
 | protocol | official — warmup=20, repeats=100, rounds=3, alternating baseline/optimized order; candidate loaded once per sweep (B8+B9) |
-| updated by | opus-1 (iter 13, job `router_v3`) |
+| updated by | opus-1 (iter 14, job `s1_tf32`) |
+
+**Disclosure (S1, TODO.md):** every number before this run was measured with
+TF32 force-disabled process-wide — including for the *baseline* — because
+the old fix for a real bug (Inductor's max-autotune picking a TF32 kernel
+for the candidate while the baseline stayed on eager cuBLAS, drifting outside
+the gate) was scoped too broadly and silently overrode the harness's own
+default (`allow_tf32=True`, matching the organizer's config) for every route
+target, not just the compiled one. Rescoped to affect only the `compile`
+(max-autotune) path; everything else now runs at the harness/organizer
+default. Both baseline and candidate speed up under TF32 (e.g. shape 8's
+baseline: 29.9ms → 7.9ms) — this is the organizer's actual default
+configuration, not a change we're choosing for a bigger number.
 
 **How it works:** no new kernel code. Routes each shape, by
 `(batch_size, seq_len, d_model, num_heads)`, to whichever of four
@@ -32,12 +44,11 @@ Beats every single candidate on both metrics:
 | v_compile (max-autotune) | 2.18x | 2.25x |
 | v_compile_reduce (reduce-overhead, T1) | 2.29x | 2.39x |
 | v_fused_qkv | 2.16x | 2.09x |
-| **v_router (dispatch, T1+T5)** | **2.54x** | **2.61x** |
+| **v_router (dispatch, S1+T1+T5)** | **2.67x** | **2.98x** |
 
-(v_router's per-shape numbers differ slightly from the iter-6 numbers used
-to build its route table — run-to-run noise, ~1-5%. The dispatch table was
-never re-fit to this run, so this also stands as a light reproducibility
-check: the routing choices still hold up.)
+(The router's dispatch table was not re-fit to this run. S1 changed only the
+precision policy: max-autotune routes stay at full fp32 for correctness, while
+the other routes now honor the organizer's TF32-on default.)
 
 ## Shape #14 — confirmed infeasible on A100-80 (documented limitation)
 
@@ -80,20 +91,20 @@ report's language.
 
 ## Per-shape speedups — `v_router.py`, A100-80, `official-safe`, official protocol
 
-Job `router_v3` (iter 13), confirming the router after T1 was folded in as a
-4th route target.
+Job `s1_tf32` (iter 14), after scoping the max-autotune TF32 workaround to only
+the affected route and restoring the organizer default elsewhere.
 
 | shape | passed | baseline_ms | opt_ms | speedup | routed to |
 |--|--|--|--|--|--|
-| 1 | ✅ | 2.626 | 1.300 | 2.02x | compile |
-| 2 | ✅ | 1.886 | 0.373 | 5.06x | compile |
-| 3 | ✅ | 1.887 | 0.394 | 4.79x | reduce |
-| 4 | ✅ | 1.862 | 0.577 | 3.23x | reduce |
-| 5 | ✅ | 4.654 | 2.105 | 2.21x | reduce |
-| 7 | ✅ | 1.892 | 0.531 | 3.56x | compile |
-| 8 | ✅ | 29.947 | 26.281 | 1.14x | fused |
-| 9 | ✅ | 2.005 | 1.352 | 1.48x | fused |
-| 10 | ✅ | 2.332 | 1.397 | 1.67x | fused |
-| 11 | ✅ | 5.080 | 1.868 | 2.72x | fused |
-| 12 | ✅ | 1.852 | 0.787 | 2.35x | fused |
-| 13 | ✅ | 61.942 | 14.001 | 4.42x | fused |
+| 1 | ✅ | 2.623 | 1.302 | 2.02x | compile |
+| 2 | ✅ | 1.841 | 0.375 | 4.91x | compile |
+| 3 | ✅ | 1.909 | 0.330 | 5.79x | reduce |
+| 4 | ✅ | 1.884 | 0.379 | 4.97x | reduce |
+| 5 | ✅ | 2.721 | 1.120 | 2.43x | reduce |
+| 7 | ✅ | 1.851 | 0.525 | 3.52x | compile |
+| 8 | ✅ | 7.882 | 6.125 | 1.29x | fused |
+| 9 | ✅ | 1.721 | 0.807 | 2.13x | fused |
+| 10 | ✅ | 1.905 | 0.805 | 2.37x | fused |
+| 11 | ✅ | 3.481 | 1.198 | 2.91x | fused |
+| 12 | ✅ | 1.889 | 0.803 | 2.35x | fused |
+| 13 | ✅ | 43.134 | 9.633 | 4.48x | fused |
