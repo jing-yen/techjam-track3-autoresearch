@@ -1,12 +1,13 @@
 """
 T5 -- per-shape dispatch.
 
-No single candidate wins every shape (leaderboard.md iter 6, official A100
-protocol): v_compile takes the small/launch-overhead shapes hardest (#2:
-4.89x, #7: 3.48x) but v_fused_qkv edges it out on #8/#9/#10/#11/#12/#13, and
-plain best.py wins #4. Taking the per-shape max over the three already-
-validated, already-correct candidates raises the aggregate median from
-~2.1-2.2x (any single one) to ~2.5x, for free -- no new kernel code, just
+No single candidate wins every shape (leaderboard.md iter 6 + iter 10,
+official A100 protocol): compile (max-autotune) takes the small/launch-
+overhead shapes hardest (#1/#2/#7), reduce-overhead compile unexpectedly
+beats max-autotune on #3/#4/#5 (T1 finding, iter 10), and fused-qkv edges
+everything out on #8/#9/#10/#11/#12/#13. Taking the per-shape max over the
+four already-validated, already-correct candidates raises the aggregate
+median well above any single one, for free -- no new kernel code, just
 routing.
 
 Self-contained snapshot (like v_compile.py / v_fused_qkv.py): inlines all
@@ -133,10 +134,11 @@ class _BestTransformer(BaselineTransformer):
 # --------------------------------------------------------------------------- #
 # "compile" impl -- same attention as _Best*, wrapped in torch.compile.
 # --------------------------------------------------------------------------- #
-_COMPILE_MODE = "max-autotune" if torch.cuda.is_available() else "default"
+class _CompileTransformerBase(BaselineTransformer):
+    """torch.compile-wrapped variant; subclasses set _MODE. Shared by the
+    max-autotune ("compile") and reduce-overhead ("reduce") route targets."""
+    _MODE = "max-autotune"
 
-
-class _CompileTransformer(BaselineTransformer):
     def __init__(self, config: TransformerConfig) -> None:
         super().__init__(config)
         opt_layers = nn.ModuleList()
@@ -166,11 +168,20 @@ class _CompileTransformer(BaselineTransformer):
         has_padding = valid_token_mask is not None and not bool(valid_token_mask.all())
         eff_mask = valid_token_mask if has_padding else None
         if self._compiled is None:
+            mode = self._MODE if torch.cuda.is_available() else "default"
             try:
-                self._compiled = torch.compile(self._forward_impl, mode=_COMPILE_MODE)
+                self._compiled = torch.compile(self._forward_impl, mode=mode)
             except Exception:
                 self._compiled = self._forward_impl
         return self._compiled(x, eff_mask)
+
+
+class _CompileTransformer(_CompileTransformerBase):
+    _MODE = "max-autotune"
+
+
+class _ReduceOverheadTransformer(_CompileTransformerBase):
+    _MODE = "reduce-overhead"
 
 
 # --------------------------------------------------------------------------- #
@@ -279,23 +290,29 @@ def _fused_copy(baseline, optimized) -> None:
 # --------------------------------------------------------------------------- #
 # Router
 # --------------------------------------------------------------------------- #
-_IMPLS = {"best": _BestTransformer, "compile": _CompileTransformer, "fused": _FusedTransformer}
+_IMPLS = {
+    "best": _BestTransformer,
+    "compile": _CompileTransformer,
+    "reduce": _ReduceOverheadTransformer,
+    "fused": _FusedTransformer,
+}
 
 # (batch_size, seq_len, d_model, num_heads) -> best-known implementation.
-# Source: leaderboard.md iter 6, A100-80, official timing protocol.
+# Source: leaderboard.md iter 6 (best/compile/fused) + iter 10 (reduce-overhead,
+# T1), A100-80, official timing protocol.
 _ROUTE = {
-    (64, 128, 128, 4):   "compile",  # shape 1  -- 2.02x vs best 1.53x, fused 1.76x
-    (1, 128, 128, 4):    "compile",  # shape 2  -- 4.89x vs best 2.33x, fused 2.37x
-    (4, 128, 128, 4):    "compile",  # shape 3  -- 3.66x vs best 2.35x, fused 2.36x
-    (16, 128, 128, 4):   "best",     # shape 4  -- 2.57x vs compile 2.34x, fused 2.34x
-    (128, 128, 128, 4):  "fused",    # shape 5  -- 1.86x vs best 1.66x, compile 1.59x
-    (64, 128, 32, 4):    "compile",  # shape 7  -- 3.48x vs best 1.93x, fused 1.99x
-    (64, 128, 1024, 4):  "fused",    # shape 8  -- 1.14x vs best 1.09x, compile 1.09x
-    (64, 128, 128, 1):   "fused",    # shape 9  -- 1.47x vs best 1.27x, compile 1.22x
-    (64, 128, 128, 2):   "fused",    # shape 10 -- 1.68x vs best 1.47x, compile 1.39x
-    (64, 128, 128, 16):  "fused",    # shape 11 -- 2.73x vs best 2.45x, compile 2.40x
-    (64, 32, 128, 4):    "fused",    # shape 12 -- 2.35x vs best 2.21x, compile 1.91x
-    (64, 1024, 128, 4):  "fused",    # shape 13 -- 4.39x vs best 4.16x, compile 4.14x
+    (64, 128, 128, 4):   "compile",  # shape 1  -- 2.02x vs best 1.53x, fused 1.76x, reduce 2.02x
+    (1, 128, 128, 4):    "compile",  # shape 2  -- 4.89x vs best 2.33x, fused 2.37x, reduce 5.04x
+    (4, 128, 128, 4):    "reduce",   # shape 3  -- 4.83x vs compile 4.24x, best 2.35x, fused 2.36x
+    (16, 128, 128, 4):   "reduce",   # shape 4  -- 3.24x vs best 2.17x, compile 2.34x, fused 2.34x
+    (128, 128, 128, 4):  "reduce",   # shape 5  -- 2.19x vs fused 1.86x, best 1.66x, compile 1.59x
+    (64, 128, 32, 4):    "compile",  # shape 7  -- 3.59x vs reduce 2.79x, best 1.93x, fused 1.99x
+    (64, 128, 1024, 4):  "fused",    # shape 8  -- 1.14x vs best 1.09x, compile 1.09x, reduce 1.09x
+    (64, 128, 128, 1):   "fused",    # shape 9  -- 1.47x vs best 1.27x, compile 1.22x, reduce 1.21x
+    (64, 128, 128, 2):   "fused",    # shape 10 -- 1.70x vs best 1.47x, compile 1.39x, reduce 1.40x
+    (64, 128, 128, 16):  "fused",    # shape 11 -- 2.73x vs best 2.45x, compile 2.40x, reduce 2.39x
+    (64, 32, 128, 4):    "fused",    # shape 12 -- 2.36x vs best 2.21x, compile 1.91x, reduce 1.94x
+    (64, 1024, 128, 4):  "fused",    # shape 13 -- 4.42x vs best 4.16x, compile 4.14x, reduce 4.15x
 }
 _FALLBACK = "compile"
 
