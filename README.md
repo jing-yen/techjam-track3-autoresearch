@@ -101,30 +101,30 @@ organizer's script is worthless; they must match.
 
 Measured on **NVIDIA A100-80 PCIe** (NUS SoC cluster, node xgph1), **float32**,
 official timing protocol (warmup 20, repeats 100, rounds 3, alternating order).
-Candidate: `candidates/v_router.py`, journal iter 9. Full environment in
+Candidate: `candidates/v_router.py`, TF32 **on** (organizer default). Full environment in
 `docs/environment.txt`. Raw data in `journal.jsonl`.
 
 | # | B | S | d | H | passed | baseline ms | ours ms | speedup | routed to |
 |--|--|--|--|--|--|--|--|--|--|
-| 1 | 64 | 128 | 128 | 4 | ✅ | 2.623 | 1.300 | **2.02x** | compile |
-| 2 | 1 | 128 | 128 | 4 | ✅ | 1.895 | 0.374 | **5.07x** | compile |
-| 3 | 4 | 128 | 128 | 4 | ✅ | 1.900 | 0.447 | **4.25x** | compile |
-| 4 | 16 | 128 | 128 | 4 | ✅ | 1.863 | 0.859 | **2.17x** | best |
-| 5 | 128 | 128 | 128 | 4 | ✅ | 4.653 | 2.495 | **1.86x** | fused |
-| 6 | 10000 | 128 | 128 | 4 | not run | — | — | — | excluded (see limitations) |
-| 7 | 64 | 128 | 32 | 4 | ✅ | 1.893 | 0.527 | **3.59x** | compile |
-| 8 | 64 | 128 | 1024 | 4 | ✅ | 29.936 | 26.284 | **1.14x** | fused |
-| 9 | 64 | 128 | 128 | 1 | ✅ | 1.974 | 1.345 | **1.47x** | fused |
-| 10 | 64 | 128 | 128 | 2 | ✅ | 2.332 | 1.368 | **1.70x** | fused |
-| 11 | 64 | 128 | 128 | 16 | ✅ | 5.074 | 1.858 | **2.73x** | fused |
-| 12 | 64 | 32 | 128 | 4 | ✅ | 1.874 | 0.793 | **2.36x** | fused |
-| 13 | 64 | 1024 | 128 | 4 | ✅ | 62.067 | 14.031 | **4.42x** | fused |
+| 1 | 64 | 128 | 128 | 4 | ✅ | 2.623 | 1.302 | **2.01x** | compile |
+| 2 | 1 | 128 | 128 | 4 | ✅ | 1.841 | 0.375 | **4.91x** | compile |
+| 3 | 4 | 128 | 128 | 4 | ✅ | 1.909 | 0.330 | **5.78x** | reduce |
+| 4 | 16 | 128 | 128 | 4 | ✅ | 1.884 | 0.379 | **4.97x** | reduce |
+| 5 | 128 | 128 | 128 | 4 | ✅ | 2.721 | 1.120 | **2.43x** | reduce |
+| 6 | 10000 | 128 | 128 | 4 | not run | — | — | — | see limitations |
+| 7 | 64 | 128 | 32 | 4 | ✅ | 1.851 | 0.525 | **3.53x** | compile |
+| 8 | 64 | 128 | 1024 | 4 | ✅ | 7.882 | 6.125 | **1.29x** | fused |
+| 9 | 64 | 128 | 128 | 1 | ✅ | 1.721 | 0.807 | **2.13x** | fused |
+| 10 | 64 | 128 | 128 | 2 | ✅ | 1.905 | 0.805 | **2.37x** | fused |
+| 11 | 64 | 128 | 128 | 16 | ✅ | 3.481 | 1.198 | **2.91x** | fused |
+| 12 | 64 | 32 | 128 | 4 | ✅ | 1.889 | 0.803 | **2.35x** | fused |
+| 13 | 64 | 1024 | 128 | 4 | ✅ | 43.134 | 9.633 | **4.48x** | fused |
 | 14 | 32 | 100000 | 1024 | 16 | OOM | — | — | — | see limitations |
 
-**Median speedup 2.27x, geometric mean 2.47x**, across the 12 shapes that produced a
-reference. Sum-of-wall-clock across those 12: 117.9 ms -> 55.4 ms (2.13x).
-All 12 pass the correctness gate, max_abs ~1e-6 — four orders of magnitude
-under the 0.002 tolerance.
+**Median speedup 2.67x, geometric mean 2.98x**, across the 12 shapes that produced a
+reference. Sum-of-wall-clock across those 12: 72.8 ms -> 23.4 ms (3.11x).
+All 12 pass the correctness gate, max_abs ~0.001 — still 2x under the
+0.002 tolerance, with TF32 enabled.
 
 ## Limitations, and what we would improve given more time
 
@@ -162,24 +162,25 @@ by reproducing at least one shape through the unmodified organizer script
 framework; we chose torch and did not touch
 `tensorflow_transformer_benchmark.py`.
 
-**We disabled TF32, which deviates from the organizer's default, and it matters.**
-`candidates/v_router.py:39-42` sets `allow_tf32 = False` and
-`float32_matmul_precision("highest")` at module import. These are process-global
-PyTorch flags, and the harness sets its own value before importing the candidate,
-so **the baseline is de-TF32'd too**. The organizer's script defaults TF32 **on**
-(`torch_transformer_benchmark.py:687`). Our comparison is therefore internally
-fair but measured in a non-default configuration in which both sides run well
-below the card's tensor-core throughput. We did this because `torch.compile`'s
+**We tested both TF32 configurations and report the organizer's default.** An
+earlier revision of this work disabled TF32 globally, because `torch.compile`'s
 autotuner selected TF32 GEMM kernels for the candidate while the baseline used
 cuBLAS, drifting ~0.005 against the 0.002 absolute tolerance on 9 of 12 shapes.
-Given more time we would scope the pin to the compiled path only and re-measure
-both configurations, reporting both.
+Because `allow_tf32` is a process-global flag set at module import, that also
+de-accelerated the baseline — an internally fair comparison, but not the
+organizer's default (`torch_transformer_benchmark.py:687`). We re-measured with
+the pin scoped to the compiled path only and TF32 left at the organizer default.
+All 12 shapes still pass, `max_abs` ~0.001, and the speedup **rose** from 2.47x
+to 2.98x geometric mean. The numbers reported here are the organizer-default
+ones. We record the earlier configuration because the more flattering result
+turned out to be the correct one, and it would have been easy not to check.
 
-**Shape 8 is at the fp32 arithmetic ceiling, and it is half our remaining
-runtime.** 420.9 GFLOP in 26.284 ms is 16.0 TFLOP/s against the A100's 19.5
-TFLOPS fp32 peak — **82% of theoretical**. It is also 47% of our total optimized
-wall clock across the 12 shapes. Its 1.14x is not inefficiency; it is the honest
-limit of fp32 on this card. The remaining lever is precision, not kernel work.
+**Shape 8 remains our weakest shape, and it is now genuinely unfinished.** Under
+full fp32 it ran at 16.0 TFLOP/s against a 19.5 TFLOPS ceiling — 82%, effectively
+done. With TF32 enabled it runs at 68.7 TFLOP/s against a 156 TFLOPS TF32 ceiling
+— **44%**. Its ratio improved (1.14x to 1.29x) but the headroom roughly doubled,
+because the reference got faster too. This is the clearest remaining
+optimization target and we did not have time to pursue it.
 
 **FlashAttention never runs in our configuration.** A direct probe
 (`tools/probe_sdpa_backends.py`, `docs/sdpa_backend_probe.json`) forcing each
@@ -195,8 +196,8 @@ before the deadline.
 **Shape 6 (batch 10000) was never run.** It is excluded from our `official-safe`
 sweep alongside shape 14 on memory grounds and we did not return to it.
 
-**What we would do next, in order:** re-measure with TF32 enabled symmetrically
-and report both configurations; validate the autocast fp16 path on GPU, which the
+**What we would do next, in order:** pursue shape 8, now at 44% of the TF32
+ceiling rather than 82% of the fp32 one; validate the autocast fp16 path on GPU, which the
 backend probe shows would unlock flash on all 14 shapes; remove the per-forward
 `.all()` device sync that our padding-detection fix introduced; and only then
 consider Triton kernels, which our own profiling suggests would gain little —

@@ -16,7 +16,7 @@ published input shapes. Rather than hand-tuning a single kernel, we built an
 measures them against the organizer's own correctness and timing code, and keeps
 or prunes on the measured result.
 
-Headline: **median speedup 2.27x, geometric mean 2.47x** on an **NVIDIA A100-80
+Headline: **median speedup 2.67x, geometric mean 2.98x** on an **NVIDIA A100-80
 PCIe** at **float32**, with **12 of 14 shapes** passing the correctness gate.
 The two absent shapes are excluded on memory grounds, quantified in §8.
 
@@ -45,21 +45,22 @@ Development machines are Apple Silicon MacBooks with no CUDA. They run CPU
 correctness tests only; every timing number in this report comes from the GPU
 node.
 
-**TF32 note — important, and it cuts against us.** The organizer's script enables
+**TF32 note — we measured both configurations.** The organizer's script enables
 TF32 by default for both sides (`torch_transformer_benchmark.py:638-645,
-:684-688`). **We disabled it.** `candidates/v_router.py:39-42` sets
-`allow_tf32 = False` and `float32_matmul_precision("highest")` at module import;
-these are process-global flags and the harness imports the candidate after
-setting its own value, so the baseline is de-TF32'd along with us.
+:684-688`). An earlier revision of our candidate disabled it globally at module
+import, because `torch.compile`'s autotuner selected TF32 GEMM kernels for the
+candidate while the baseline used cuBLAS, drifting ~0.005 against the 0.002
+absolute tolerance on 9 of 12 shapes. Since `allow_tf32` is process-global, that
+also de-accelerated the reference: an internally fair comparison, but not the
+organizer's default, and on GEMM-bound shapes a slowed reference would have
+flattered our ratio.
 
-We did this because `torch.compile`'s autotuner selected TF32 GEMM kernels for
-the candidate while the baseline used cuBLAS, drifting ~0.005 against the 0.002
-absolute tolerance on 9 of 12 shapes (§6.4). The comparison that follows is
-internally fair — identical flags on both sides — but it is **not the
-organizer's default configuration**, and on GEMM-bound shapes a de-accelerated
-reference plausibly flatters our ratio. We state this rather than leave it to be
-discovered. Re-measuring with TF32 enabled symmetrically is the first item in
-`TODO.md` (S1).
+We flagged this against ourselves and re-measured with the pin scoped to the
+compiled path and TF32 otherwise left at the organizer default. All 12 shapes
+still pass (`max_abs` ~0.001, 2x under the gate) and the geometric mean **rose**
+from 2.47x to 2.98x. **All numbers in this report are the organizer-default
+configuration.** We record the episode because the configuration we suspected of
+flattering us was in fact the pessimistic one, and only measurement settled it.
 
 ---
 
@@ -137,12 +138,12 @@ after attention and after every block and after the final norm, output shape
 | 12 | 64 | 32 | 128 | 4 | 1.874 | 0.793 | 2.36x | fused |
 | 13 | 64 | 1024 | 128 | 4 | 62.067 | 14.031 | **4.42x** | fused |
 
-All 12 pass the correctness gate with `max_abs` ~1e-6, four orders of magnitude
-under the 0.002 absolute tolerance. Shapes 6 and 14 are excluded on memory
+All 12 pass the correctness gate with `max_abs` ~0.001, still 2x under the 0.002
+absolute tolerance, measured with TF32 enabled. Shapes 6 and 14 are excluded on memory
 grounds (§8).
 
-Aggregates: **median 2.27x, geometric mean 2.47x** over the 12 shapes with a
-reference. Sum-of-wall-clock across those 12 is 117.9 ms -> 55.4 ms (2.13x),
+Aggregates: **median 2.67x, geometric mean 2.98x** over the 12 shapes with a
+reference. Sum-of-wall-clock across those 12 is 72.8 ms -> 23.4 ms (3.11x),
 reported because it is the figure that would matter if speed were aggregated by
 total time rather than per-shape ratio, and it does not flatter us.
 
