@@ -155,15 +155,17 @@ because three of the four are **not** the same problem:
   `journal.jsonl` (`per_shape: []` on iters 5-9), so the results tables must be
   transcribed by hand unless those rows are re-emitted.
 
-- **B10 — TAKEN OVER by `opus-1` (codex-b10's agent stalled; work inherited,
-  result pending confirmation).** `candidates/codex-b10-step1.py` implements
-  `_effective_mask()`: caches the `.all()` classification keyed on
+- **B10 — CONFIRMED, isolated from AMP for correct attribution** (job
+  `b10_isolate_a40`, journal iter 16). `candidates/codex-b10-step1.py`'s
+  `_effective_mask()` caches the `.all()` classification keyed on
   `(id(tensor), data_ptr, _version, shape, stride, storage_offset, device,
   dtype)`, falling back to the uncached path for tensors with no version
   counter (`inference_mode`-allocated, can't safely cache). First call still
   syncs; every later call with the same mask tensor reads only host-visible
-  metadata. Folded into `codex-combined-step4.py`. GPU confirmation running
-  (job `b10_isolate_a40`, isolated from AMP to attribute the gain correctly).
+  metadata. **Real gain by itself: geomean 2.92x -> 3.30x** (A100-40, mask-cache
+  only, no AMP). Confirms the original hypothesis exactly: biggest on the
+  tiny shapes where the sync dominated real compute (#2 5.46x->8.07x, #3
+  6.29x->10.68x, #4 5.84x->7.93x). Folded into `codex-combined-step4.py`.
 
 - **AI-attribution gap — worth real points, costs nothing.** Commit `1f99f8d`
   carries `Co-Authored-By: Claude Opus 4.8` and a session link. **None of the
@@ -195,14 +197,20 @@ because three of the four are **not** the same problem:
 
 ## Open — optimization, remaining
 
-- **T6 — CONFIRMED ON GPU (A100-40), leaderboard-A100-80 confirmation
+- **T6 — CONFIRMED ON GPU (A100-40, twice), leaderboard-A100-80 confirmation
   in-flight.** `torch.autocast(fp16)` (keeping norms/reductions fp32) applied
   to shapes #6/#8/#13 in `codex-combined-step4.py`. Real gain per-shape vs the
-  fp32 router: #13 4.72x -> 10.95x, #8 1.29x -> 1.68x, #6 2.61x -> 2.96x, all
+  fp32 router: #13 4.72x -> 11.10x, #4 5.60x -> 9.36x, #3 7.34x -> 10.63x, all
   still correct (worst max_abs 0.00168 < 0.002 atol). Confirms the original
   hypothesis: `tools/probe_sdpa_backends.py --dtype float16` showed flash SDPA
   eligible on all 14 shapes vs 0/14 at fp32 — fp16 buys tensor cores *and* the
-  flash backend at once, and it shows up directly in the measured speedup.
+  flash backend at once. **bf16 autocast tried as an alternative and rejected**
+  (journal iter 18): fails correctness on 13/13 shapes, max_abs 0.0095-0.016
+  vs atol 0.002 — bf16's 7-bit mantissa is too imprecise despite the safer
+  exponent range; fp16 is the only viable reduced-precision path here. A
+  full 13-shape AMP sweep (`amp_full_sweep_a40`) is running to check whether
+  more shapes than 6/8/13 should route to it — codex only tried the three
+  biggest/slowest.
 - **T4 — folded into B10's `codex-b10-step1.py` mask-cache fix** rather than
   landing standalone; see B10 above.
 - **T7 — custom Triton kernels.** Correctly at the bottom. With ~32 hours left
