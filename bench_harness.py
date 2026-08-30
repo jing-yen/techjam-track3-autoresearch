@@ -289,8 +289,9 @@ def select_shapes(spec: str) -> Dict[int, dict]:
     if spec == "all":
         return dict(OFFICIAL_SHAPES)
     if spec == "official-safe":
-        # everything except the two extreme-memory shapes (#6 B=10000, #14 seq=100k)
-        return {k: v for k, v in OFFICIAL_SHAPES.items() if k not in (6, 14)}
+        # Shape #6 was measured correct on A100-40 (S4, iter 15) and uses only
+        # ~6.7 GB. Shape #14 remains infeasible in fp32 on an 80 GB GPU.
+        return {k: v for k, v in OFFICIAL_SHAPES.items() if k != 14}
     ids = [int(tok) for tok in spec.split(",") if tok.strip()]
     catalog = {**OFFICIAL_SHAPES, **DEV_SHAPES}
     out = {}

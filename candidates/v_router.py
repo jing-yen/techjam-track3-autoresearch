@@ -313,6 +313,7 @@ _ROUTE = {
     (4, 128, 128, 4):    "reduce",   # shape 3  -- 4.83x vs compile 4.24x, best 2.35x, fused 2.36x
     (16, 128, 128, 4):   "reduce",   # shape 4  -- 3.24x vs best 2.17x, compile 2.34x, fused 2.34x
     (128, 128, 128, 4):  "reduce",   # shape 5  -- 2.19x vs fused 1.86x, best 1.66x, compile 1.59x
+    (10000, 128, 128, 4): "compile", # shape 6  -- A100-40: 2.79x vs reduce 2.38x, fused 1.92x (S4)
     (64, 128, 32, 4):    "compile",  # shape 7  -- 3.59x vs reduce 2.79x, best 1.93x, fused 1.99x
     (64, 128, 1024, 4):  "fused",    # shape 8  -- 1.14x vs best 1.09x, compile 1.09x, reduce 1.09x
     (64, 128, 128, 1):   "fused",    # shape 9  -- 1.47x vs best 1.27x, compile 1.22x, reduce 1.21x

@@ -232,7 +232,10 @@ def run_slurm(candidates: List[str], cfg: Dict, shapes: str, dtype: str,
     # Poll until the job leaves the queue.
     deadline = time.monotonic() + cfg["max_wait_s"]
     while True:
-        q = _sh(f"squeue -j {job_id} -h -t all", ssh_host=ssh_host, check=False)
+        # Default squeue output contains active jobs only. Some Slurm versions
+        # retain COMPLETED jobs when `-t all` is requested, which made the
+        # runner wait until max_wait_s even though result files already existed.
+        q = _sh(f"squeue -j {job_id} -h", ssh_host=ssh_host, check=False)
         if not q.stdout.strip():
             break
         if time.monotonic() > deadline:

@@ -87,41 +87,15 @@ avoid its measured asymmetric-kernel correctness drift.
 
 ---
 
-## In progress
+## Done — latest experiment
 
 - **S4 — Run shape #6. Highest expected value per minute in the queue.**
-  **Claimed by `codex-1`:** run router/max-autotune, fused-QKV, and
-  reduce-overhead concurrently; establish coverage and select a route only on
-  measured correctness plus optimized time.
-  **Zero attempts.** No `journal.jsonl` row references shape 6; it has been
-  excluded from every sweep since the first, because `bench_harness.py`'s
-  `official-safe` set was defined as "everything except the two extreme-memory
-  shapes (#6 B=10000, #14 seq=100k)". That definition was written on a MacBook
-  before anyone had GPU access, by inspection of which numbers looked large.
-  For #14 the guess was correct. **For #6 it is wrong by more than 10x:**
-
-  | | fp32 |
-  |--|--|
-  | one `[B,S,D]` activation | 0.61 GB |
-  | ~7 live tensors | 4.27 GB |
-  | baseline `[B,H,S,S]` scores | 2.44 GB |
-  | **rough total** | **~6.7 GB** against **79.25 GB** available |
-
-  B=10000 *sounds* extreme, but each sequence is 128 tokens of 128 dims. Ten
-  thousand small problems cost far less memory than thirty-two enormous ones
-  (#14's single activation alone is 12.2 GB).
-  *Why it matters:* #6 is **1,174 GFLOP — the second-largest workload in the
-  suite** and one of the 14 shapes §3.7 requires. Reporting 12/14 when it could
-  be 13/14 is a self-inflicted gap in Technical Execution, and it is a large,
-  batch-parallel shape where our SDPA + compile work should do well.
-  *Action:* `python runner.py --candidates candidates/v_router.py --shapes 6`.
-  One job. If it passes, add it to every subsequent sweep and to the results
-  tables in `README.md` / `TECH_REPORT.md`.
-  *Falsify:* it OOMs or fails the gate -> document it beside #14 with the
-  measured number, exactly as B5 was documented. Either outcome is a better
-  deliverable than silence.
-  *Note:* `select_shapes()` at `bench_harness.py:269-271` still hard-codes the
-  exclusion. Either pass `--shapes 6` explicitly or widen `official-safe`.
+  **DONE by `codex-1`** (iter 15, Slurm array 777056, A100-40). All three
+  candidates passed **491,520,000/491,520,000 elements** with max_abs
+  1.91e-6. Router/max-autotune won at **2.79x, 125.66 ms**, ahead of
+  reduce-overhead (**2.38x, 146.62 ms**) and fused-QKV (**1.92x, 181.15 ms**).
+  Shape #6 is now included in `official-safe`; the router has an explicit
+  `compile` route. Final aggregate reporting still requires an A100-80 sweep.
 
 ## Open — shape 14, reopened
 

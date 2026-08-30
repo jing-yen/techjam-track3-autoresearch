@@ -289,3 +289,22 @@ non-default benchmark mode.
 
 **Decision.** New best. Keep the scoped precision policy and disclose the
 historical measurement correction in the leaderboard/report.
+
+---
+
+### iter 15 · agent `codex-1` · direction `shape-coverage` · **S4 passes: shape #6 is safe**
+
+**Hypothesis.** Shape #6 was excluded only by an unmeasured memory guess. Its
+estimated ~6.7 GB footprint should fit easily, and a three-way route race can
+establish both correctness coverage and the best implementation.
+
+**Result.** Slurm array 777056 ran concurrently on three A100-40 GPUs. All
+three candidates passed all 491,520,000 compared elements (max_abs 1.91e-6):
+router/max-autotune **2.790x, 125.660 ms**; reduce-overhead **2.379x,
+146.622 ms**; fused-QKV **1.924x, 181.149 ms**. The router is 16.7% faster
+than reduce-overhead by optimized time.
+
+**Decision.** Shape #6 is safe and joins subsequent `official-safe` sweeps.
+Keep the router's compile route. Confirm aggregate numbers on A100-80 before
+changing the main leaderboard. During recovery, fixed `runner.py` polling:
+this cluster retains completed jobs under `squeue -t all`, causing false waits.
