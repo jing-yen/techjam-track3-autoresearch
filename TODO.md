@@ -210,7 +210,13 @@ because three of the four are **not** the same problem:
   exponent range; fp16 is the only viable reduced-precision path here. A
   full 13-shape AMP sweep (`amp_full_sweep_a40`) is running to check whether
   more shapes than 6/8/13 should route to it — codex only tried the three
-  biggest/slowest.
+  biggest/slowest. **Result (journal iter 19): confirmed optimal as-is.**
+  AMP-everywhere is 13/13 correct (max_abs 0.0012-0.0019, safely under gate
+  on every shape) but only *wins* per-shape on #6 (4.78x vs router 2.61x),
+  #8 (6.10x vs 1.29x), #13 (15.13x vs 4.72x) — exactly the three shapes
+  already routed to it. #5 is a statistical tie (2.54x vs 2.51x, not worth
+  the risk); every other shape clearly favors its existing route. No further
+  AMP routing needed.
 - **T4 — folded into B10's `codex-b10-step1.py` mask-cache fix** rather than
   landing standalone; see B10 above.
 - **T7 — custom Triton kernels.** Correctly at the bottom. With ~32 hours left
