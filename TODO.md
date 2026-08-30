@@ -95,6 +95,39 @@ TFLOPS**, **TF32 Tensor Core 156 TFLOPS**, 108 SMs
 
 ---
 
+## Open — SHAPE 6 HAS NEVER BEEN RUN, AND PROBABLY WORKS
+
+- **S4 — Run shape #6. Highest expected value per minute in the queue.**
+  **Zero attempts.** No `journal.jsonl` row references shape 6; it has been
+  excluded from every sweep since the first, because `bench_harness.py`'s
+  `official-safe` set was defined as "everything except the two extreme-memory
+  shapes (#6 B=10000, #14 seq=100k)". That definition was written on a MacBook
+  before anyone had GPU access, by inspection of which numbers looked large.
+  For #14 the guess was correct. **For #6 it is wrong by more than 10x:**
+
+  | | fp32 |
+  |--|--|
+  | one `[B,S,D]` activation | 0.61 GB |
+  | ~7 live tensors | 4.27 GB |
+  | baseline `[B,H,S,S]` scores | 2.44 GB |
+  | **rough total** | **~6.7 GB** against **79.25 GB** available |
+
+  B=10000 *sounds* extreme, but each sequence is 128 tokens of 128 dims. Ten
+  thousand small problems cost far less memory than thirty-two enormous ones
+  (#14's single activation alone is 12.2 GB).
+  *Why it matters:* #6 is **1,174 GFLOP — the second-largest workload in the
+  suite** and one of the 14 shapes §3.7 requires. Reporting 12/14 when it could
+  be 13/14 is a self-inflicted gap in Technical Execution, and it is a large,
+  batch-parallel shape where our SDPA + compile work should do well.
+  *Action:* `python runner.py --candidates candidates/v_router.py --shapes 6`.
+  One job. If it passes, add it to every subsequent sweep and to the results
+  tables in `README.md` / `TECH_REPORT.md`.
+  *Falsify:* it OOMs or fails the gate -> document it beside #14 with the
+  measured number, exactly as B5 was documented. Either outcome is a better
+  deliverable than silence.
+  *Note:* `select_shapes()` at `bench_harness.py:269-271` still hard-codes the
+  exclusion. Either pass `--shapes 6` explicitly or widen `official-safe`.
+
 ## Open — the four sub-2x shapes, diagnosed
 
 Read `docs/research-sub2x.md` for the full derivation. Summary of the causes,
