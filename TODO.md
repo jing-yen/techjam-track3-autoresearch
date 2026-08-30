@@ -232,6 +232,104 @@ because three of the four are **not** the same problem:
 - **T2, T3 — superseded.** Both landed as `v_compile.py` / `v_fused_qkv.py` and
   are now route targets inside `v_router.py`.
 
+## Literature review cross-check (`~/Downloads/deep-research-report.md`)
+
+A deep-research survey of the transformer-kernel-optimization literature
+(FlashAttention family, PagedAttention/FlashInfer, quantization, sparsity,
+Triton/CuTe/TileLang, Roofline methodology) was checked against this repo.
+Most of it targets **autoregressive decode/serving** (growing KV cache,
+many forward calls, request batching) — our task is a **single fixed-shape
+prefill-only forward pass** per candidate, so a large fraction doesn't
+apply. Below: every distinct idea in the report, and its actual disposition
+here, not just "considered."
+
+**Already tried, matches the literature's own conclusion:**
+- Flash-style tiled exact attention avoiding the O(S²) score matrix — T0
+  seed, confirmed correct/fast from iter 0.
+- Fusion (norm/residual/GELU/matmul epilogues) via a graph compiler rather
+  than hand-written kernels — `torch.compile` (T1/T2), matches the report's
+  own "dispatch among multiple kernels... instead of one universal kernel"
+  recommendation for the PyTorch stack specifically.
+- Precision-aware Tensor Core usage (TF32) — S1.
+- Mixed precision with numerically sensitive ops kept in fp32 — T6/AMP
+  (`autocast` keeps LayerNorm/softmax fp32, matches Transformer Engine's
+  documented pattern exactly).
+- Per-shape/per-regime kernel dispatch instead of one universal kernel — T5
+  (`v_router.py`), the report's own stated best practice for PyTorch.
+- Informal Roofline/bottleneck classification per shape (TFLOP/s vs peak,
+  launch-overhead diagnosis for tiny batches) — `docs/research-sub2x.md`,
+  T8.
+- **Newly checked and closed this pass:** cuDNN SDPA backend
+  (`SDPBackend.CUDNN_ATTENTION`) — the report flagged that PyTorch 2.5+
+  ships this as a 4th backend our original B2 probe never tested. Confirmed
+  present in torch 2.10.0+cu128; **confirmed unavailable at the environment
+  level** ("cuDNN attention has been runtime disabled") on all 14 shapes —
+  not a per-shape ineligibility, a build-level gap. `mem_efficient` remains
+  the only real fp32 option. Journal iter 23, `docs/sdpa_backend_probe_cudnn.json`.
+- **Newly tried and rejected this pass:** approximate (tanh) GELU instead of
+  exact (erf) — passes correctness (max_abs 0.0003-0.0005) but is a
+  statistical wash on speed (2.083x vs 2.086x median) — GELU is too small a
+  fraction of FFN time on our shapes for this to matter. Journal iter 24,
+  `candidates/v_gelu_tanh.py`. Not adopted.
+
+**Correctly out of scope, not worth adding:**
+- PagedAttention, FlashInfer, KV-cache paging/quantization, split-KV decode
+  scheduling — all decode/serving-specific (growing KV cache across many
+  forward calls). We run one forward pass per shape; there is no KV cache.
+- GQA/MQA — changes the model architecture (fewer KV heads), which breaks
+  weight-copy compatibility with the fixed baseline. Disqualified on
+  correctness grounds, not effort.
+- Weight-only INT4/INT8 (GPTQ/AWQ/Marlin) — these amortize dequantization
+  cost over *many* decode steps reusing the same weights; we do a single
+  forward pass per shape, so that amortization doesn't apply, and our bf16
+  result (7-bit mantissa already fails by 5-8x) is strong evidence a
+  coarser format fails worse. Not worth a GPU job to confirm the obvious.
+- FP8 — no native FP8 Tensor Cores on A100 (our primary hardware); would
+  need H100 (see below).
+- Structured/unstructured sparsity (SparseGPT, Sparse-Marlin) — requires
+  pruning the baseline's fixed weights, which changes the function being
+  computed. Same correctness objection as GQA.
+- RoPE/ALiBi fusion, gated-FFN (SwiGLU) horizontal fusion — the baseline
+  model has neither (no positional-embedding kernel to fuse; FFN is plain
+  `Linear→GELU→Linear`, no separate gate/up projection to fuse together).
+- Multi-GPU/distributed kernels (ParallelKittens, collective overlap) — one
+  GPU per benchmark job, no cross-device communication exists to overlap.
+- CPU-specific backends (oneDNN/AMX) — out of scope, target hardware is
+  A100/H100 GPU per PROGRAM.md.
+
+**Genuinely new, not yet tried — added below as open items:**
+
+- **L1 — H100 confirmation run.** The problem statement allows A100 *or*
+  H100 and the cluster has H100 nodes (`sinfo`: `h100-96`, `h100-47`
+  partitions seen with idle capacity). We have only ever benchmarked on
+  A100. H100's much higher compute-to-bandwidth ratio (report: ridge point
+  ~153 FLOP/B on A100 vs ~295 on H100) could change which route wins per
+  shape — e.g. `compile`/`reduce`'s relative advantage over `fused` may
+  shift. Cheap: same candidates, same harness, just point `--gres` at an
+  H100 node and rerun `official-safe`. *Falsify:* route rankings hold
+  unchanged from A100 → low priority, note it and move on.
+- **L2 — CUDA-stream pipelining for shape #14's chunked forward.** Already
+  flagged in S5/leaderboard.md as the natural next lever if ~74.6s/forward
+  needs to be faster: overlap chunk N's compute with chunk N+1's
+  transfer/setup across the 8 sequential chunks in `v_chunked14.py`,
+  instead of running them fully serially. The literature review's own
+  "prefetch tile n+1 while tile n computes" pattern applies directly here
+  at the chunk level. Not yet attempted — no evidence yet on how much it
+  would help, or whether Python-level overhead dominates enough that it
+  wouldn't matter.
+- **L3 — regional/shared compilation across repeated identical layers.**
+  Our model has `num_layers` (2-6) *identical* transformer blocks per
+  shape. The report notes PyTorch's "regional compilation" work exists
+  specifically so repeated identical layers don't each trigger redundant
+  `torch.compile` work. We have never checked whether Inductor is
+  separately compiling each of our N identical blocks (redundant) or
+  sharing one compiled kernel across them. If it's the former, this could
+  cut `compile`/`reduce` route compile time meaningfully — directly
+  relevant to why `v_compile.py`'s max-autotune attempt on shape #14 never
+  finished (iter 7: killed at the 15-min limit still autotuning). Cheap to
+  check: inspect `torch._dynamo.config` / `TORCH_LOGS=recompiles` output on
+  one multi-layer shape before deciding whether to act on it.
+
 ## Done
 
 - **S1 — TF32 scope fixed and measured** (iter 14, job `s1_tf32`). The old
