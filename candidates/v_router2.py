@@ -1,9 +1,16 @@
 """
-v_router2 -- consolidated dispatch: B10 mask-cache + T6 AMP (6/8/13) +
-S2 route fix for 9/10 (reduce-overhead beats fused once mask-cache is in
-play, journal iter 20). Supersedes codex-combined-step4.py, which had 9/10
-still on fused because that specific pairing was never actually re-measured
-under the mask-cache fix until now.
+v_router2 -- consolidated dispatch: B10 mask-cache + T6 AMP (6/8/13).
+
+S2 route change for 9/10 (reduce-overhead instead of fused) was tried and
+REVERTED (iter 21): an isolated pairwise test (just shapes 9/10, journal
+iter 20) showed reduce beating fused (3.65x/3.98x vs 2.14x/2.37x), but
+inside the full 13-shape sweep -- where 5 different shapes now compile a
+"reduce" instance in the same process -- it underperformed fused instead
+(1.81x/2.01x vs fused's in-sweep 2.09x/2.33x). Likely a torch.compile /
+CUDA-graph memory-pool interaction between concurrently-alive compiled
+instances that an isolated 2-shape test can't see. Real lesson: route
+decisions must be validated inside the actual full sweep, not pairwise --
+kept on `fused` for 9/10, same as the original router.
 
 CUDA fp16 autocast target for the three throughput-heavy shapes selected for
 the AMP experiment (#6, #8, and #13); confirmed near-optimal by a full
@@ -381,8 +388,13 @@ _ROUTE = {
     (10000, 128, 128, 4): "amp",     # shape 6  -- A100-40: 2.79x vs reduce 2.38x, fused 1.92x (S4)
     (64, 128, 32, 4):    "compile",  # shape 7  -- 3.59x vs reduce 2.79x, best 1.93x, fused 1.99x
     (64, 128, 1024, 4):  "amp",      # shape 8  -- 1.14x vs best 1.09x, compile 1.09x, reduce 1.09x
-    (64, 128, 128, 1):   "reduce",   # shape 9  -- iter 20 (w/ mask-cache): 3.65x vs fused 2.14x, compile 1.91x
-    (64, 128, 128, 2):   "reduce",   # shape 10 -- iter 20 (w/ mask-cache): 3.98x vs fused 2.37x, compile 2.11x
+    (64, 128, 128, 1):   "fused",    # shape 9  -- reverted (iter 21): reduce looked good isolated (3.65x)
+                                      # but underperformed fused (2.09x) inside the full 13-shape sweep
+                                      # (1.81x) -- likely cudagraph/compile-cache interaction between the
+                                      # 5 shapes that now compile "reduce" in the same process. Route
+                                      # decisions must be validated in the full sweep, not pairwise.
+    (64, 128, 128, 2):   "fused",    # shape 10 -- same revert, same reason (isolated 3.98x, in-sweep 2.01x
+                                      # vs fused's in-sweep 2.33x)
     (64, 128, 128, 16):  "fused",    # shape 11 -- 2.73x vs best 2.45x, compile 2.40x, reduce 2.39x
     (64, 32, 128, 4):    "fused",    # shape 12 -- 2.36x vs best 2.21x, compile 1.91x, reduce 1.94x
     (64, 1024, 128, 4):  "amp",      # shape 13 -- 4.42x vs best 4.16x, compile 4.14x, reduce 4.15x

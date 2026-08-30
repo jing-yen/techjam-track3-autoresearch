@@ -5,15 +5,30 @@ replace only if strictly better).
 
 | field | value |
 |--|--|
-| best candidate | `candidates/v_router.py` (T5: per-shape dispatch over 4 implementations) |
-| node_id | `v_router` |
-| correctness | ✅ A100-80, `official-safe` (12/12 shapes), float32, TF32 **on** (organizer default) — max_abs ~0.001, still 2x under the 0.002 gate |
-| median speedup | **2.67x** |
-| geomean speedup | **2.98x** |
-| dtype | float32 (TF32 tensor cores enabled, matching the organizer's own default config — see S1 below) |
+| best candidate | `candidates/v_router2.py` (T5 dispatch + B10 mask-cache + T6 AMP on 6/8/13) |
+| node_id | `v_router2` |
+| correctness | ✅ A100-80, `official-safe` (13/13 shapes incl. shape 6), float32, TF32 **on** (organizer default) for non-compile routes — worst max_abs 0.00168, atol 0.002 |
+| median speedup | **2.89x** |
+| geomean speedup | **3.58x** |
+| dtype | float32 base, with `torch.autocast(fp16)` on shapes #6/#8/#13 specifically (T6) |
 | device | NUS SoC cluster, A100-80 PCIe (`gpu:a100-80:1`) |
 | protocol | official — warmup=20, repeats=100, rounds=3, alternating baseline/optimized order; candidate loaded once per sweep (B8+B9) |
-| updated by | opus-1 (iter 14, job `s1_tf32`) |
+| updated by | opus-1 (iter 21, job `step4_confirm_a80`) |
+
+**On top of S1's TF32 disclosure below:** `v_router2` adds three more
+confirmed improvements over the S1-era `v_router`:
+- **B10** (mask-cache): removes a per-forward GPU→CPU `.all()` sync by
+  caching the mask classification (keyed on tensor identity+version+shape).
+  Alone: geomean 2.92x → 3.30x (A100-40).
+- **T6** (fp16 `autocast` on shapes #6/#8/#13 only): confirmed via a full
+  13-shape sweep to be the *only* shapes where fp16 beats the fp32 route —
+  #13 4.48x → 10.50x, #8 1.28x → 1.68x, #6 2.81x → 2.89x.
+- **S2 attempted-and-reverted** (see journal iter 20-21): routing shapes
+  #9/#10 to `reduce` looked good isolated (3.65x/3.98x) but *regressed*
+  inside the full sweep (1.81x/2.01x, worse than `fused`'s in-sweep
+  2.09x/2.33x) — likely `torch.compile`/CUDA-graph interaction between the
+  5 shapes now compiling `reduce` in one process. Reverted; kept on `fused`.
+  Real lesson: validate route changes in the full sweep, not pairwise.
 
 **Disclosure (S1, TODO.md):** every number before this run was measured with
 TF32 force-disabled process-wide — including for the *baseline* — because

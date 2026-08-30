@@ -132,11 +132,17 @@ because three of the four are **not** the same problem:
 - **#5 is now 2.43x at 1.12 ms** after TF32 restoration. Do not optimize it
   independently unless a shared variant improves the aggregate.
 
-- **S2 — TAKEN OVER by `opus-1` (codex-s2's agent stalled; result inherited).**
-  `codex-combined-step4.py` reverts #9 from a tried `reduce` route back to
-  `fused` (see the `codex-b10-step1.py` -> `step4` diff) — confirms `reduce`
-  does not beat `fused` on #9, so `fused` is already optimal there. Folded
-  into the combined candidate below rather than closed standalone.
+- **S2 — CLOSED: `fused` confirmed optimal for #9/#10, with a real
+  methodology lesson attached.** An isolated pairwise test (just shapes
+  9/10, journal iter 20) showed `reduce` clearly beating `fused` (3.65x/
+  3.98x vs 2.14x/2.37x) — but tried inside the full 13-shape sweep
+  (`v_router2.py`, journal iter 21), it *regressed*: 1.81x/2.01x, worse
+  than `fused`'s in-sweep 2.09x/2.33x. Likely `torch.compile`/CUDA-graph
+  memory-pool interaction between the 5 shapes that now compile a `reduce`
+  instance in the same process — invisible to a 2-shape isolated test.
+  Reverted; `fused` stays on #9/#10. **Route decisions must be validated in
+  the full deployment sweep, not pairwise** — recorded as a real lesson for
+  any future routing change.
 
 - **S3 — #5 and the large-batch regime: document, do not optimize.** Evidence
   above. Falsify: if a variant beats 2.43x on #5 without regressing #1, this
@@ -176,13 +182,12 @@ because three of the four are **not** the same problem:
 
 ## Open — the measurement that unblocks the rest
 
-- **M1 — TAKEN OVER by `opus-1`, PRELIMINARY RESULT IN HAND: falsified —
-  a config beats 2.98x.** `codex-combined-step4.py` (AMP autocast(fp16) on
-  shapes #6/#8/#13, kept in fp32 elsewhere + B10 mask cache + S2 fix) scored
-  **median 2.96x / geomean 3.91x on A100-40**, all 13/13 correct, worst
-  max_abs 0.00168 (atol 0.002) — up from the router's 2.51x/2.93x on the same
-  GPU/run. A100-80 confirmation running now (job `step4_confirm_a80`) to
-  match the leaderboard's stated GPU class before promoting it.
+- **M1 — CLOSED: falsified, new leaderboard best confirmed on A100-80.**
+  `candidates/v_router2.py` (AMP autocast(fp16) on shapes #6/#8/#13 + B10
+  mask-cache; S2's route change tried and reverted, see S2 below) scored
+  **median 2.89x / geomean 3.58x on A100-80** (job `step4_confirm_a80`,
+  journal iter 21), all 13/13 correct, worst max_abs 0.00168 (atol 0.002) —
+  up from the router's 2.67x/2.98x. This is now the leaderboard number.
 
 ## Open — shape 14
 
@@ -197,11 +202,11 @@ because three of the four are **not** the same problem:
 
 ## Open — optimization, remaining
 
-- **T6 — CONFIRMED ON GPU (A100-40, twice), leaderboard-A100-80 confirmation
-  in-flight.** `torch.autocast(fp16)` (keeping norms/reductions fp32) applied
-  to shapes #6/#8/#13 in `codex-combined-step4.py`. Real gain per-shape vs the
-  fp32 router: #13 4.72x -> 11.10x, #4 5.60x -> 9.36x, #3 7.34x -> 10.63x, all
-  still correct (worst max_abs 0.00168 < 0.002 atol). Confirms the original
+- **T6 — CONFIRMED ON A100-80** (job `step4_confirm_a80`, journal iter 21).
+  `torch.autocast(fp16)` (keeping norms/reductions fp32) applied to shapes
+  #6/#8/#13 in `v_router2.py`. Real gain per-shape vs the fp32 router:
+  #13 4.48x -> 10.50x, #8 1.28x -> 1.68x, #6 2.81x -> 2.89x, all still
+  correct (worst max_abs 0.00168 < 0.002 atol). Confirms the original
   hypothesis: `tools/probe_sdpa_backends.py --dtype float16` showed flash SDPA
   eligible on all 14 shapes vs 0/14 at fp32 — fp16 buys tensor cores *and* the
   flash backend at once. **bf16 autocast tried as an alternative and rejected**

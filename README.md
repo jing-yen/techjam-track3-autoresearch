@@ -109,12 +109,19 @@ number below is a real measured run, not an estimate.
 Each point is one autoresearch iteration that changed the leaderboard number,
 not a manual tuning pass. `journal.jsonl` has the full record per iteration.
 
+All points below are on **A100-80** (our stated canonical device) except
+iter 17, the one intermediate step measured on A100-40 while the 80GB card
+was queue-congested — its ratio isn't directly comparable to the others
+(different GPU, different baseline/optimized absolute times), so treat it as
+a checkpoint, not a bar in the same series. iter 21 re-confirms the same
+candidate on A100-80 for the number that actually belongs in this chart.
+
 ```mermaid
 xychart-beta
-    title "Geomean speedup across the research loop"
-    x-axis ["iter6\nv_compile", "iter9\nv_router (T5)", "iter13\n+T1 reduce", "iter14\n+S1 TF32-scope", "iter17\n+B10+S2+T6 AMP"]
+    title "Geomean speedup across the research loop (A100-80)"
+    x-axis ["iter6\nv_compile", "iter9\nv_router (T5)", "iter13\n+T1 reduce", "iter14\n+S1 TF32-scope", "iter21\n+B10+T6 AMP"]
     y-axis "Geomean speedup" 0 --> 5
-    bar [2.25, 2.47, 2.61, 2.98, 3.92]
+    bar [2.25, 2.47, 2.61, 2.98, 3.58]
 ```
 
 | iter | direction | node | median | geomean | what changed |
@@ -123,35 +130,50 @@ xychart-beta
 | 9 | dispatch | `v_router` | 2.27x | 2.47x | T5: per-shape dispatch over best/compile/fused — no new kernel code |
 | 13 | dispatch | `v_router` | 2.54x | 2.61x | T1 (`reduce-overhead` compile) folded in as a 4th route target |
 | 14 | precision-scope | `v_router` | 2.67x | 2.98x | S1: TF32-disable scoped to only the `compile` route, restoring the organizer's own TF32-on default everywhere else |
-| 17 | combined | `v_router2` | 2.96x | 3.92x | B10 (removed a per-forward device sync via a versioned mask cache) + S2 (re-routed #9/#10 to `reduce`) + T6 (fp16 `autocast` on #6/#8/#13, the only shapes it actually wins) |
+| 21 | combined, confirmed | `v_router2` | **2.89x** | **3.58x** | B10 (removed a per-forward device sync via a versioned mask cache) + T6 (fp16 `autocast` on #6/#8/#13, the only shapes it actually wins) |
 
-Two rejected directions, kept for the record: **bf16 autocast** (fails
-correctness on 13/13 shapes, max_abs up to 0.016 vs the 0.002 gate — its
-7-bit mantissa is too imprecise) and **AMP applied to every shape** (13/13
-correct but only *wins* on the 3 shapes already routed to it — confirmed
-optimal, not extended further).
+Three rejected/reverted directions, kept for the record because a negative
+result is still a result:
+- **bf16 autocast** — fails correctness on 13/13 shapes, max_abs up to 0.016
+  vs the 0.002 gate; its 7-bit mantissa is too imprecise.
+- **AMP applied to every shape** — 13/13 correct but only *wins* on the 3
+  shapes already routed to it (confirmed via a full 13-shape sweep); not
+  extended further.
+- **S2's `reduce` route for shapes #9/#10** — looked like a clear win
+  isolated (3.65x/3.98x vs `fused`'s 2.14x/2.37x, tested pairwise), but
+  *regressed* inside the full 13-shape sweep (1.81x/2.01x, worse than
+  `fused`'s in-sweep 2.09x/2.33x) — a real methodology lesson: route
+  decisions have to be validated in the full deployment sweep, since
+  `torch.compile`'s CUDA-graph memory pools interact across the multiple
+  shapes compiling concurrently in one process, invisible to a 2-shape test.
+  Reverted; `journal.jsonl` iters 20-21 have the full trace.
+
+Candidate: `candidates/v_router2.py` (job `step4_confirm_a80`, iter 21 —
+functionally identical route table, verified by diff, see journal).
 
 | # | B | S | d | H | passed | baseline ms | ours ms | speedup | routed to |
 |--|--|--|--|--|--|--|--|--|--|
-| 1 | 64 | 128 | 128 | 4 | ✅ | 2.623 | 1.302 | **2.01x** | compile |
-| 2 | 1 | 128 | 128 | 4 | ✅ | 1.841 | 0.375 | **4.91x** | compile |
-| 3 | 4 | 128 | 128 | 4 | ✅ | 1.909 | 0.330 | **5.78x** | reduce |
-| 4 | 16 | 128 | 128 | 4 | ✅ | 1.884 | 0.379 | **4.97x** | reduce |
-| 5 | 128 | 128 | 128 | 4 | ✅ | 2.721 | 1.120 | **2.43x** | reduce |
-| 6 | 10000 | 128 | 128 | 4 | not run | — | — | — | see limitations |
-| 7 | 64 | 128 | 32 | 4 | ✅ | 1.851 | 0.525 | **3.53x** | compile |
-| 8 | 64 | 128 | 1024 | 4 | ✅ | 7.882 | 6.125 | **1.29x** | fused |
-| 9 | 64 | 128 | 128 | 1 | ✅ | 1.721 | 0.807 | **2.13x** | fused |
-| 10 | 64 | 128 | 128 | 2 | ✅ | 1.905 | 0.805 | **2.37x** | fused |
-| 11 | 64 | 128 | 128 | 16 | ✅ | 3.481 | 1.198 | **2.91x** | fused |
-| 12 | 64 | 32 | 128 | 4 | ✅ | 1.889 | 0.803 | **2.35x** | fused |
-| 13 | 64 | 1024 | 128 | 4 | ✅ | 43.134 | 9.633 | **4.48x** | fused |
-| 14 | 32 | 100000 | 1024 | 16 | OOM | — | — | — | see limitations |
+| 1 | 64 | 128 | 128 | 4 | ✅ | 2.617 | 1.208 | **2.17x** | compile |
+| 2 | 1 | 128 | 128 | 4 | ✅ | 1.802 | 0.276 | **6.52x** | compile |
+| 3 | 4 | 128 | 128 | 4 | ✅ | 1.852 | 0.229 | **8.08x** | reduce |
+| 4 | 16 | 128 | 128 | 4 | ✅ | 1.838 | 0.283 | **6.50x** | reduce |
+| 5 | 128 | 128 | 128 | 4 | ✅ | 2.711 | 1.010 | **2.68x** | reduce |
+| 6 | 10000 | 128 | 128 | 4 | ✅ | 186.150 | 64.442 | **2.89x** | amp (fp16) |
+| 7 | 64 | 128 | 32 | 4 | ✅ | 1.788 | 0.464 | **3.85x** | compile |
+| 8 | 64 | 128 | 1024 | 4 | ✅ | 7.970 | 4.747 | **1.68x** | amp (fp16) |
+| 9 | 64 | 128 | 128 | 1 | ✅ | 1.686 | 0.759 | **2.22x** | fused |
+| 10 | 64 | 128 | 128 | 2 | ✅ | 1.863 | 0.760 | **2.45x** | fused |
+| 11 | 64 | 128 | 128 | 16 | ✅ | 3.472 | 1.161 | **2.99x** | fused |
+| 12 | 64 | 32 | 128 | 4 | ✅ | 1.835 | 0.746 | **2.46x** | fused |
+| 13 | 64 | 1024 | 128 | 4 | ✅ | 43.176 | 4.112 | **10.50x** | amp (fp16) |
+| 14 | 32 | 100000 | 1024 | 16 | see below | — | — | — | see limitations |
 
-**Median speedup 2.67x, geometric mean 2.98x**, across the 12 shapes that produced a
-reference. Sum-of-wall-clock across those 12: 72.8 ms -> 23.4 ms (3.11x).
-All 12 pass the correctness gate, max_abs ~0.001 — still 2x under the
-0.002 tolerance, with TF32 enabled.
+**Median speedup 2.89x, geometric mean 3.58x**, across all 13 shapes that
+produced a reference (includes shape 6, confirmed feasible in S4 — the
+sweep now covers every official shape except #14). All 13 pass the
+correctness gate; worst max_abs 0.00168, still under the 0.002 tolerance,
+with TF32 enabled on every route except `compile` (S1) and fp16 `autocast`
+on #6/#8/#13 specifically (T6).
 
 ## Limitations, and what we would improve given more time
 
