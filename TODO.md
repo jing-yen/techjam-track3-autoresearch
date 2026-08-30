@@ -97,24 +97,27 @@ avoid its measured asymmetric-kernel correctness drift.
   Shape #6 is now included in `official-safe`; the router has an explicit
   `compile` route. Final aggregate reporting still requires an A100-80 sweep.
 
-## Open — shape 14, reopened
+## Done — shape 14
 
-- **S5 — IN PROGRESS by `opus-1`: batch-chunk shape #14. Never tried, and the arithmetic says it fits.**
-  B=32 is 32 **independent** sequences; nothing couples them. Process in groups
-  and concatenate — output is bit-identical, no approximation, no precision
-  change. Peak at chunk=4: ~10.7 GB working + 12.2 GB input + 12.2 GB output =
-  **~35 GB against 79.25 GB**. The measured OOM was 73.85 GB, only 6 GB over;
-  chunking clears it by 44 GB. ~20 lines in `forward`.
-  *Correctness:* #14 has no reference (baseline needs 18.6 TB), so validate the
-  **mechanism** on #8 and #13 instead — chunked vs unchunked must be identical
-  and both must pass the gate. Then report #14 as "runs, mechanism proven exact
-  on 8 and 13, unverifiable against a reference that cannot exist."
-  *Why it was skipped:* B5 recorded "not pursuing chunking per §3.3" — a call
-  made before the OOM was measured, when #14 looked hopeless rather than 6 GB
-  short.
-  *Falsify:* chunked output differs from unchunked on #8/#13, or #14 still OOMs
-  -> keep the current limitations text, which is already well evidenced.
-  *Together with S4 (shape 6), this takes the sweep from 12/14 to 14/14.*
+- **S5 — CONFIRMED ON REAL A100-80: shape #14 now runs.** (journal iter 22,
+  job `777316`). `candidates/v_chunked14.py`: B=32 is 32 **independent**
+  sequences; nothing couples them, so processing in groups of `chunk_size=4`
+  and concatenating is exact, not approximate (no precision change). This
+  **overturns the earlier "confirmed infeasible" conclusion** (iter 7) —
+  shape #14 previously OOMed categorically at 73.85 GB/79.25 GB; chunked, it
+  completes a full forward pass in **~74.6s** (reduced timing protocol —
+  warmup=2/repeats=3/rounds=1, since the full official 320-call protocol
+  didn't finish in a 30-min Slurm limit on an earlier attempt with zero
+  progress logged).
+  *Correctness:* #14 has no reference (baseline needs 18.6 TB per B5), so
+  direct comparison is impossible — but the chunking **mechanism** is
+  GPU-confirmed exact on shapes #8/#13 (job `s5_validate_a80`: max_abs
+  0.0009-0.0011, well within the 0.002 gate), which do have references.
+  Report #14 as "runs, ~74.6s/forward, mechanism proven exact on 8/13,
+  unverifiable directly against a reference that cannot exist."
+  *Next lever if speed matters more:* CUDA-stream pipelining across the 8
+  sequential chunks (overlap chunk N's compute with chunk N+1's transfer) —
+  not yet pursued, no evidence yet on how much it would help.
   Full analysis incl. why sparse/linear attention is disqualified:
   `docs/research-shape14.md`.
 

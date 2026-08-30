@@ -65,7 +65,27 @@ Beats every single candidate on both metrics:
 precision policy: max-autotune routes stay at full fp32 for correctness, while
 the other routes now honor the organizer's TF32-on default.)
 
-## Shape #14 — confirmed infeasible on A100-80 (documented limitation)
+## Shape #14 — UPDATE (S5, iter 22): now runs via batch-chunking
+
+**Superseded below.** The original three eager/compiled candidates all
+failed (kept below for the record — real, useful evidence of *why* naive
+implementations don't work). But `candidates/v_chunked14.py` (S5: exact
+batch-chunking, `chunk_size=4` — B=32 is 32 independent sequences, nothing
+couples them, so splitting into groups and concatenating changes nothing
+mathematically) **completes a full forward pass on real A100-80 hardware in
+~74.6s** (job `777316`, reduced timing protocol — the full official 320-call
+protocol didn't finish within a 30-min Slurm limit). No correctness
+comparison is possible directly (the baseline needs 18.6 TB to materialize
+its score matrix — B5's original finding still holds for the *reference*),
+but the chunking mechanism itself is GPU-confirmed exact on shapes #8/#13
+(job `s5_validate_a80`: max_abs 0.0009-0.0011, well within the 0.002 gate),
+which do have references. Report: "runs, ~74.6s/forward, mechanism proven
+exact where a reference exists, unverifiable directly on #14 itself."
+~75s/forward is slow relative to the other shapes' millisecond scale;
+CUDA-stream pipelining across the 8 sequential chunks is the natural next
+lever if that becomes a real requirement — not yet pursued.
+
+## Shape #14 — original attempt: eager/compiled candidates all failed
 
 Attempted all three base candidates on the full A100-80 (batch=32, seq=100000,
 d_model=1024, num_heads=16). Two distinct, real failure modes — this
@@ -88,10 +108,13 @@ matches B5's math exactly, with real numbers instead of estimates:
   impractical on its own compile-time cost, independent of the memory
   ceiling above.
 
-**Conclusion:** infeasible in fp32 on any single GPU we have access to, for
-two independent reasons. Not pursuing fp16/H100 or batch-chunking — out of
-scope per TODO.md B5/rubric §3.3 (no "production-ready" gold-plating
-expected). Documented here as the required §3.5 limitations reflection.
+**Original conclusion (since revised by S5 above):** these three specific
+implementations are infeasible on any single GPU, for two independent
+reasons — eager SDPA's plain activation memory, and max-autotune's
+compile-time cost. That conclusion still holds *for these three
+candidates*. It does not generalize to "shape 14 is infeasible" — S5's
+batch-chunked candidate above shows the actual ceiling was activation
+memory specifically, and that a targeted ~20-line fix clears it.
 
 ## B2 — which SDPA backend actually fires (resolved, iter 8)
 

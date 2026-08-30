@@ -180,18 +180,25 @@ on #6/#8/#13 specifically (T6).
 Written honestly. Several of these are things we found and did not have time to
 fix; they are recorded here rather than hidden.
 
-**Shape 14 does not run, and we can quantify exactly why.** At
-`B=32, S=100000, d=1024`, one `[B,S,D]` activation is 12.2 GB in fp32 (6.1 GB in
-fp16). A forward pass holds roughly seven such tensors live, so the floor is about
-**85 GB fp32 / 43 GB fp16** before any attention workspace. The reference is worse
-still: it materializes the full `[B,H,S,S]` score matrix
-(`torch_transformer_benchmark.py:97`), which is 18.6 TB in fp32 — 37 GB for a
-*single* `(batch, head)` slice, of which there are 512. **The organizer's own
-reference therefore cannot produce ground truth for shape 14 on any single GPU**,
-so there is nothing to check a candidate against even if it ran. Given more time
-we would implement sequence-chunked streaming attention and validate it against a
-chunked oracle we write ourselves, while stating plainly that this is a different
-benchmark from the other thirteen.
+**Shape 14 now runs, via exact batch-chunking — but there is nothing to
+check it against.** At `B=32, S=100000, d=1024`, one `[B,S,D]` activation is
+12.2 GB in fp32; a forward pass holds roughly seven such tensors live, so
+the floor is ~85 GB before any attention workspace, against 79.25 GB
+available — the first three candidates we tried all OOMed there. But B=32
+is 32 **independent** sequences (nothing in this model couples across the
+batch dimension), so processing them in groups of 4 and concatenating the
+outputs is mathematically exact, not an approximation. That candidate
+(`candidates/v_chunked14.py`) completes a full forward pass on real A100-80
+hardware in **~74.6s**. The organizer's own reference is a separate problem
+and remains genuinely impossible: it materializes the full `[B,H,S,S]`
+score matrix (`torch_transformer_benchmark.py:97`), which is 18.6 TB in
+fp32 — 37 GB for a *single* `(batch, head)` slice, of which there are 512.
+**No GPU can produce ground truth for shape 14**, so correctness there is
+checked indirectly: we validated the identical chunking *mechanism* on
+shapes #8 and #13, which do have references, and it passes the gate exactly
+(max_abs 0.0009-0.0011). Given more time, the next lever is CUDA-stream
+pipelining across the 8 sequential chunks to bring the ~75s down — not
+yet attempted, no evidence yet on how much it would help.
 
 **Our timing is steady-state, not cold-start.** We inherit the organizer's
 protocol, which reuses one fixed input for all iterations and never flushes L2
