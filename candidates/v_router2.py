@@ -65,6 +65,73 @@ from torch_transformer_benchmark import BaselineTransformer, TransformerConfig
 
 STRICT_WEIGHT_COPY = False  # dispatch target may be the fused-qkv layout
 
+# T7: fused residual-add + LayerNorm (AddNorm), confirmed on A100-80
+# (journal iter 29): geomean 1.88x -> 2.02x standalone vs plain LayerNorm,
+# 13/13 correct. Used ONLY by the eager routes (best/amp) below -- NOT by
+# _CompileTransformerBase's compile/reduce routes, which already get their
+# own operator fusion from torch.compile/Inductor and where injecting a raw
+# Triton kernel call risks graph breaks under tracing. See
+# candidates/v_triton_addnorm.py for the original standalone validation.
+try:
+    import triton
+    import triton.language as tl
+    _HAS_TRITON = torch.cuda.is_available()
+except ImportError:
+    _HAS_TRITON = False
+
+
+if _HAS_TRITON:
+    @triton.jit
+    def _fused_add_layernorm_kernel(
+        residual_ptr, delta_ptr, weight_ptr, bias_ptr,
+        out_ptr, sum_ptr,
+        n_cols, eps,
+        BLOCK_SIZE: tl.constexpr,
+    ):
+        row = tl.program_id(0)
+        col_offsets = tl.arange(0, BLOCK_SIZE)
+        mask = col_offsets < n_cols
+        base = row * n_cols
+
+        residual = tl.load(residual_ptr + base + col_offsets, mask=mask, other=0.0).to(tl.float32)
+        delta = tl.load(delta_ptr + base + col_offsets, mask=mask, other=0.0).to(tl.float32)
+        x = residual + delta
+        tl.store(sum_ptr + base + col_offsets, x, mask=mask)
+
+        mean = tl.sum(x, axis=0) / n_cols
+        xm = tl.where(mask, x - mean, 0.0)
+        var = tl.sum(xm * xm, axis=0) / n_cols
+        rstd = 1.0 / tl.sqrt(var + eps)
+        x_norm = xm * rstd
+
+        weight = tl.load(weight_ptr + col_offsets, mask=mask, other=1.0).to(tl.float32)
+        bias = tl.load(bias_ptr + col_offsets, mask=mask, other=0.0).to(tl.float32)
+        y = x_norm * weight + bias
+        tl.store(out_ptr + base + col_offsets, y, mask=mask)
+
+    def fused_add_layernorm(residual: torch.Tensor, delta: torch.Tensor,
+                             weight: torch.Tensor, bias: torch.Tensor, eps: float):
+        orig_shape = residual.shape
+        n_cols = orig_shape[-1]
+        residual2d = residual.reshape(-1, n_cols).contiguous()
+        delta2d = delta.reshape(-1, n_cols).contiguous()
+        n_rows = residual2d.shape[0]
+
+        out = torch.empty_like(residual2d)
+        new_sum = torch.empty_like(residual2d)
+        block_size = triton.next_power_of_2(n_cols)
+        grid = (n_rows,)
+        _fused_add_layernorm_kernel[grid](
+            residual2d, delta2d, weight, bias, out, new_sum,
+            n_cols, eps, BLOCK_SIZE=block_size,
+        )
+        return out.view(orig_shape), new_sum.view(orig_shape)
+else:
+    def fused_add_layernorm(residual, delta, weight, bias, eps):
+        x = residual + delta
+        y = F.layer_norm(x, (x.shape[-1],), weight, bias, eps)
+        return y, x
+
 
 def _effective_mask(module: nn.Module, valid_token_mask: Optional[torch.Tensor]):
     """Return None for a stable all-valid mask without synchronizing every call.
@@ -171,12 +238,38 @@ class _BestBlock(nn.Module):
         return x
 
 
+class _BestBlockTriton(nn.Module):
+    """Same as _BestBlock, but the post-attention residual-add + norm2 step
+    runs through the fused Triton AddNorm kernel (T7) instead of two
+    separate ops. Used only by the eager routes below (best/amp) -- kept as
+    a separate class from _BestBlock so _CompileTransformerBase's
+    compile/reduce routes (which construct _BestBlock directly) are
+    completely unaffected."""
+
+    def __init__(self, d_model, num_heads, ffn_dim):
+        super().__init__()
+        self.norm1 = nn.LayerNorm(d_model)
+        self.attention = _BestAttention(d_model, num_heads)
+        self.norm2 = nn.LayerNorm(d_model)
+        self.ffn_in = nn.Linear(d_model, ffn_dim)
+        self.ffn_out = nn.Linear(ffn_dim, d_model)
+
+    def forward(self, x, valid_token_mask, causal):
+        attn_out = self.attention(self.norm1(x), valid_token_mask, causal)
+        normed, x = fused_add_layernorm(
+            x, attn_out, self.norm2.weight, self.norm2.bias, self.norm2.eps)
+        x = x + self.ffn_out(F.gelu(self.ffn_in(normed), approximate="none"))
+        if valid_token_mask is not None:
+            x = x.masked_fill(~valid_token_mask[..., None], 0)
+        return x
+
+
 class _BestTransformer(BaselineTransformer):
     def __init__(self, config: TransformerConfig) -> None:
         super().__init__(config)
         opt_layers = nn.ModuleList()
         for base_block in self.layers:
-            blk = _BestBlock(config.d_model, config.num_heads, config.ffn_dim)
+            blk = _BestBlockTriton(config.d_model, config.num_heads, config.ffn_dim)
             blk.norm1 = base_block.norm1
             blk.norm2 = base_block.norm2
             blk.ffn_in = base_block.ffn_in
@@ -202,6 +295,11 @@ class _BestTransformer(BaselineTransformer):
 # "amp" impl -- plain SDPA under CUDA float16 autocast (T6).
 # Parameters and inputs remain fp32; autocast chooses eligible mixed-precision
 # kernels and unlocks flash SDPA. CPU stays on the ordinary fp32 path.
+# Inherits _BestTransformer's Triton-fused AddNorm block (T7) -- the fusion
+# kernel casts to fp32 internally for the reduction regardless of input
+# dtype, so it should be numerically correct whether called under fp32 or
+# fp16 autocast; verified empirically on GPU (not just assumed), see
+# journal T7 AMP-integration entry.
 # --------------------------------------------------------------------------- #
 class _AMPTransformer(_BestTransformer):
     def forward(self, x, valid_token_mask=None):
