@@ -46,6 +46,7 @@ _ENV_OVERRIDES = {
     "account": "RUNNER_ACCOUNT",
     "gres": "RUNNER_GRES",
     "exclude": "RUNNER_EXCLUDE",
+    "array_throttle": "RUNNER_ARRAY_THROTTLE",
     "time": "RUNNER_TIME",
     "module_load": "RUNNER_MODULE_LOAD",
     "python": "RUNNER_PYTHON",
@@ -56,7 +57,8 @@ _ENV_OVERRIDES = {
 
 _DEFAULTS = {
     "mode": "local", "ssh_host": "", "remote_workdir": HERE,
-    "partition": "", "account": "", "gres": "gpu:a100:1", "exclude": "", "time": "00:20:00",
+    "partition": "", "account": "", "gres": "gpu:a100:1", "exclude": "",
+    "array_throttle": 1, "time": "00:20:00",
     "module_load": "", "python": sys.executable or "python", "device": "cuda",
     "poll_interval_s": 10, "max_wait_s": 3600,
 }
@@ -104,11 +106,14 @@ def render_sbatch(cfg: Dict, job: Dict) -> str:
     account_line = f"#SBATCH --account={cfg['account']}" if cfg.get("account") else ""
     partition_line = f"#SBATCH --partition={cfg['partition']}" if cfg.get("partition") else ""
     exclude_line = f"#SBATCH --exclude={cfg['exclude']}" if cfg.get("exclude") else ""
+    throttle = int(cfg.get("array_throttle") or 0)
+    array_throttle = f"%{throttle}" if throttle > 0 else ""
     subs = {
         "JOB_NAME": job["job_name"],
         "PARTITION_LINE": partition_line,
         "ACCOUNT_LINE": account_line,
         "EXCLUDE_LINE": exclude_line,
+        "ARRAY_THROTTLE": array_throttle,
         "GRES": cfg["gres"],
         "TIME": cfg["time"],
         "LOGDIR": job["logdir"],

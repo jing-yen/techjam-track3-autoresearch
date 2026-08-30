@@ -9,6 +9,7 @@
   "account": "",
   "gres": "gpu:a100-80:1",
   "exclude": "xgpj0",
+  "array_throttle": 3,
   "time": "00:30:00",
   "module_load": "",
   "python": "/home/t/tjingyen/flood_env/bin/python",
