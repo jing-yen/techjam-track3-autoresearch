@@ -110,7 +110,7 @@ through a guarded compare-and-swap after a fresh pull.
 | T3 | Fused QKV projection, one `Linear(d, 3d)` | Three kernels become one; requires a custom weight mapping (`STRICT_WEIGHT_COPY=False`) | landed → `v_fused_qkv.py` | 2.16x / 2.09x |
 | T5 | Per-shape dispatch on `(B, S, d, H)` | The rules explicitly allow shape checks; no single candidate wins everywhere | landed → `v_router.py` | **2.27x / 2.47x — best** |
 | T6 | fp16 via `torch.autocast`, norms and reductions kept fp32 | Backend probe shows flash eligible on 14/14 shapes at fp16 vs 0/14 at fp32 | written, **not validated on GPU** | blanket cast failed 11/12; autocast untested |
-| T7 | Triton fused LayerNorm + residual | Reserved for remaining overhead after the above | **not attempted** | profiling showed insufficient headroom to justify it |
+| T7 | Triton fused LayerNorm + residual | Reserved for remaining overhead after the above | **in progress, claimable** | Roofline recheck found shape #8 at only ~28% of A100 fp16 peak — real headroom, reopened. See `TODO.md` T7 / `candidates/v_triton_addnorm.py` |
 
 **Correctness invariants preserved throughout** (full list in `PROGRAM.md`): exact
 erf GELU, fp32 softmax reduction, `1/sqrt(head_dim)` scale, `triu(diagonal=1)`

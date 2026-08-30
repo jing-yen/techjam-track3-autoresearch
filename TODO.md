@@ -227,8 +227,36 @@ because three of the four are **not** the same problem:
   AMP routing needed.
 - **T4 — folded into B10's `codex-b10-step1.py` mask-cache fix** rather than
   landing standalone; see B10 above.
-- **T7 — custom Triton kernels.** Correctly at the bottom. With ~32 hours left
-  and D1 unstarted, **do not start this.**
+- **T7 — REOPENED, real headroom found, claimable.** Previously deprioritized
+  ("profiling showed insufficient headroom" — `TECH_REPORT.md`'s own §4
+  table) — that call is now out of date. Roofline check on shape #8 (the
+  most compute-heavy shape, `batch=64,seq=128,d_model=1024,heads=4`, on the
+  fp16 `amp` route per `v_router2.py`): 420.9 GFLOP in 4.747 ms = **~88.7
+  TFLOP/s against A100's ~312 TFLOP/s dense fp16 Tensor Core peak — only
+  ~28%.** Real remaining headroom, not "insufficient."
+  *Is this in scope?* Yes, explicitly. The organizer's own problem statement
+  (`TikTok TechJam 2026 Information Document`, §3.1) lists optimization
+  methods "such as operator fusion, memory layout optimization,
+  reduced-precision computation, tensor core usage, softmax optimization,
+  and **custom CUDA, Triton, TensorFlow, or PyTorch implementations**" — a
+  menu of equally-valid options, not a mandate to drop below PyTorch, but
+  real headroom + Technical Execution being 35% of the judging weight (§3.6)
+  makes one targeted kernel worth doing now.
+  *Starting point:* `candidates/v_triton_addnorm.py` — a first draft fusing
+  the `x = x + attention_out` residual add immediately followed by
+  `norm2`'s LayerNorm into one Triton kernel (matches `PROGRAM.md`'s own
+  listed target #7, "Fused LN+residual" — one HBM round-trip removed per
+  layer for the intermediate sum). CPU-fallback path (plain add+LayerNorm,
+  used when no CUDA) is correctness-verified on all 13 shapes (max_abs
+  ~1e-6). **GPU correctness and speed not yet verified — untested on the
+  actual Triton kernel path.** Before committing further to this specific
+  design: check whether a fused-FFN (Linear+GELU+Linear epilogue) target
+  would have higher expected value instead, since FFN dominates compute on
+  large-`ffn_dim` shapes like #8 — the AddNorm fusion mainly helps by
+  removing bandwidth, but #8's bottleneck may be compute-bound (matmul),
+  where a fused epilogue matters more than an HBM round-trip.
+  *Claim this by moving it to "In progress" with your agent-id before
+  starting, same as any other item.*
 - **T2, T3 — superseded.** Both landed as `v_compile.py` / `v_fused_qkv.py` and
   are now route targets inside `v_router.py`.
 
@@ -299,15 +327,21 @@ here, not just "considered."
 
 **Genuinely new, not yet tried — added below as open items:**
 
-- **L1 — H100 confirmation run.** The problem statement allows A100 *or*
-  H100 and the cluster has H100 nodes (`sinfo`: `h100-96`, `h100-47`
-  partitions seen with idle capacity). We have only ever benchmarked on
-  A100. H100's much higher compute-to-bandwidth ratio (report: ridge point
-  ~153 FLOP/B on A100 vs ~295 on H100) could change which route wins per
-  shape — e.g. `compile`/`reduce`'s relative advantage over `fused` may
-  shift. Cheap: same candidates, same harness, just point `--gres` at an
-  H100 node and rerun `official-safe`. *Falsify:* route rankings hold
-  unchanged from A100 → low priority, note it and move on.
+- **L1 — CLOSED: falsified, documented, not acted on.** (journal iter 26,
+  job `l1_h100_confirm`). Ran `v_router2` (A100-80-tuned route table) on
+  H100-47, official protocol, 13/13 correct (worst max_abs 0.00182 < 0.002
+  atol). **Route rankings do NOT transfer unchanged: H100 gives LOWER
+  numbers** with our current routing — median 2.62x / geomean 3.19x, vs
+  A100-80's 2.89x/3.58x (e.g. shape 4: 6.50x on A100-80 `reduce` vs 4.57x
+  on H100; shape 9: 2.22x `amp` vs 1.68x). Matches the literature review's
+  own warning almost exactly. Not re-tuning routes for H100 — A100-80
+  remains the canonical leaderboard device (matches primary cluster
+  capacity and the existing leaderboard.md/README.md convention) — but
+  this is a real, honest cross-architecture finding worth a paragraph in
+  the tech report: it shows the router's routing decisions are
+  architecture-specific, not universal, which is itself evidence the
+  swarm found a genuine hardware-dependent effect rather than overfitting
+  one benchmark run.
 - **L2 — CUDA-stream pipelining for shape #14's chunked forward.** Already
   flagged in S5/leaderboard.md as the natural next lever if ~74.6s/forward
   needs to be faster: overlap chunk N's compute with chunk N+1's
