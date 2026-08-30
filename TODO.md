@@ -1,18 +1,131 @@
 # TODO — Idea backlog & claim board
 
 Claim an `Open` item by moving it to `In progress` with your agent-id (see
-`AGENTS.md` §1). Ranked roughly by expected impact. Add follow-ups freely.
+`AGENTS.md` §1). Ranked by expected impact. Add follow-ups freely.
 
-## Open
+**Every item below carries `file:line` evidence. Do not add an item without it.**
+Mark anything unmeasured `UNVERIFIED` and say what would settle it.
 
-- **T1 — torch.compile (reduce-overhead)** on the whole model. Expect launch-overhead-bound shapes (#2 batch=1, #3, #12 short seq) to gain most. Warm-compile each of the 14 shapes; verify no correctness break from guards.
-- **T2 — torch.compile (max-autotune)**. Heavier autotune; compare vs T1 on matmul-bound shapes (#8 d=1024, #6 batch=10000). Watch compile time.
-- **T3 — Fused QKV projection** (`Linear(d_model, 3*d_model)`). Set `STRICT_WEIGHT_COPY=False` + provide a `copy_model_weights` that splits the fused weight/bias into q/k/v. Fewer kernels.
-- **T4 — Memory-layout cleanups** feeding SDPA `[B,H,S,D]`: drop needless `.contiguous()`/transposes, check strides so the flash backend is actually selected. Profile which SDPA backend fires per shape.
-- **T5 — Per-shape specialization**: branch on shape → tiny seq (#12,#2) eager/compiled small path; long seq (#13,#14) mem-efficient SDPA; large dims (#8) tuned matmul path. The rules allow shape checks.
-- **T6 — fp16/bf16 path** with fp32 softmax reduction. Only if the organizer tests those dtypes; verify the gate carefully (risky).
-- **T7 — Custom Triton: fused LayerNorm+residual** (and later fused FFN GELU). Late-stage; only where profiling shows remaining overhead after SDPA+compile.
-- **T8 — Profile shapes #13 and #14** (attention-bound) to confirm the SDPA backend and find the next bottleneck before writing more code.
+---
+
+## READ FIRST — three PROGRAM.md claims are false
+
+Verified against the organizer script on 2026-08-30. Fix these beliefs before
+writing code against them.
+
+1. **`valid_token_mask` is NEVER `None`.** At `padding_ratio<=0` (the default,
+   `torch_transformer_benchmark.py:614`) `generate_random_case` returns an
+   **all-True mask**, not `None` (`torch_transformer_benchmark.py:255-259`).
+   Every caller passes it: `:391 :392 :472 :494 :504`,
+   `bench_harness.py:197 :203`.
+   → `candidates/best.py:71` (`if valid_token_mask is None`) is **dead code**;
+   `is_causal=True` at `best.py:74` never executes.
+   → `PROGRAM.md:35` and `PROGRAM.md:103` ("this is what makes shape #14
+   feasible") are **false as implemented**. See B1.
+
+2. **`~40 GB/head` is wrong** (`PROGRAM.md:103`, `bench_harness.py:25`). 37 GB is
+   one `(batch,head)` slice of the score matrix. There are 32x16 = 512 of them →
+   **18.6 TB** fp32 total.
+
+3. **TF32 is already enabled for both sides** — `allow_tf32` default True,
+   `matmul_precision="high"` (`torch_transformer_benchmark.py:638-645, :684-688`;
+   `bench_harness.py:288-291, :346-347`). The baseline already runs fp32 matmuls
+   on tensor cores. "Switch to tensor cores" is not an available win, and this is
+   why the 0.002/0.02 gate is generous.
+
+---
+
+## Open — correctness / blocking
+
+- **B1 — Kill the dead `is_causal` path. Highest value in the repo.**
+  Because of READ FIRST #1 the seed always takes `best.py:75-93` and materializes
+  an additive `[B,1,S,S]` float mask. Two costs:
+  (a) an explicit `attn_mask` **disqualifies SDPA's flash backend on every
+  shape** — the seed is running mem-efficient or math everywhere;
+  (b) shape #14's mask is **1192 GB fp32**, so the candidate OOMs too.
+  Wasted alloc per layer per call elsewhere: #6 = 0.61 GB, #13 = 0.25 GB.
+  **Fix:** compute `has_padding = not bool(valid_token_mask.all())` **once** in
+  the top-level `forward` (one sync per call, not per layer), thread the bool
+  down, and use `is_causal=causal` with no `attn_mask` when it is False.
+  Keep the existing additive-mask branch for the padded case.
+  Gate: re-run `--padding-ratio 0.0` and `--padding-ratio 0.3` — both must pass.
+
+- **B4 — Develop against the TIGHT tolerance.** The script's docstring
+  (`torch_transformer_benchmark.py:11`) says `atol=0.001, rtol=0.01`; its argparse
+  (`:618-619`) says `0.002 / 0.02`. The repo hardcodes the loose pair
+  (`PROGRAM.md:12`, `README.md`, `bench_harness.py:340-341`). Flip the harness
+  defaults to `--rtol 0.01 --atol 0.001`. Free safety margin against a grader who
+  uses the documented numbers. Blocked-on-organizer: which pair is authoritative.
+
+- **B8 — Match the official timing protocol in `bench_harness.py`.**
+  Official: warmup 20, repeats 100, rounds 3, **alternating** baseline/candidate
+  (`torch_transformer_benchmark.py:622-624, :546-560`).
+  Harness: warmup 5, repeats 20, rounds 1, **sequential blocks**
+  (`bench_harness.py:343-345, :231-243`). Current harness numbers are noisier and
+  order-biased; do not report them as speedups. Note neither flushes L2 and both
+  reuse one fixed input (`:529-536`), so this measures pipelined steady state.
+
+- **B9 — Hoist `load_candidate` out of the per-shape loop** (`bench_harness.py:168`).
+  Re-imports the candidate 12x per sweep, discarding any `torch.compile` cache and
+  inflating compile cost 12x. Blocks honest measurement of T1/T2.
+
+## Open — measurement before more code
+
+- **B2 — Log which SDPA backend actually fires, per shape.** Flash is **fp16/bf16
+  only**, and the default dtype is fp32 everywhere
+  (`torch_transformer_benchmark.py:613`, `bench_harness.py:336`, `runner.py:256`).
+  So at fp32 the best available is mem-efficient. `PROGRAM.md:61`'s "biggest
+  single win" is **UNVERIFIED at fp32**. Settle by recording the backend per shape
+  under `torch.nn.attention.sdpa_kernel` and putting it in `journal.jsonl`.
+  Do this before B1 lands, so B1's delta is attributable.
+
+- **B7 — head_dim limits.** sm80 flash caps head_dim at 128. Per shape:
+  #8 = **256 (over the limit — flash impossible)**, #9 = **128 (exactly at it)**,
+  #14 = 64, #1/#12/#13 = 32, #10 = 64, #7/#11 = 8. Feeds T5's dispatch table.
+
+- **T8 — Profile #2 (0.12 GFLOP) against #6 (1174 GFLOP).** Handoff's
+  launch-overhead hypothesis for the small shapes is still UNPROFILED. Settle it
+  before assigning R1 work. Note the official timer records CUDA events
+  back-to-back with no per-iteration sync (`:492-500`), so the CPU can run ahead
+  and launch cost surfaces as the serial bottleneck when GPU work is sub-100us.
+
+## Open — shape 14
+
+- **B5 — Shape #14 is infeasible in fp32 on any GPU we have.** One `[B,S,D]`
+  activation is 12.2 GB fp32 / 6.1 GB fp16; seven live tensors is **~85 GB fp32 /
+  ~43 GB fp16**. `cluster.config.json` defaults to `gpu:a100-80:1` **and** fp32 →
+  impossible even with a perfect kernel. fp16 on A100-80 is borderline; H100-96
+  fp16 fits. The only fp32 path is chunking over the batch, which changes what the
+  measured latency means. **Do not spend a day here before the organizer answers
+  how #14 is verified** (the reference cannot produce ground truth at all —
+  `torch_transformer_benchmark.py:97` materializes the scores).
+
+## Open — optimization (unchanged intent, re-ranked)
+
+- **T1 — `torch.compile(mode="reduce-overhead")`** on the whole model. Do **after**
+  B1 and B9. Expect the launch-overhead-bound shapes (#2 batch=1, #3, #12 seq=32)
+  to gain most. Warm-compile each shape; verify guards do not break the gate.
+  Note `--compile-user` is an official flag (`:628`, applied at `:703` after
+  weight-copy and `.eval()`) — the organizer sanctions this — but do not depend on
+  the grader passing it. Compile inside the candidate.
+- **T2 — `torch.compile(mode="max-autotune")`.** Compare against T1 on the
+  matmul-bound shapes (#8 d=1024, #6 batch=10000). Watch compile time against the
+  30 min `--time` default in `cluster.config.json`.
+- **T4 — Memory-layout cleanups** feeding SDPA `[B,H,S,D]`. Drop the
+  `.contiguous()` at `best.py:95` if the following `view` allows it; check strides.
+  Merge with B2's backend logging — same run.
+- **T3 — Fused QKV projection** (`Linear(d_model, 3*d_model)`). Set
+  `STRICT_WEIGHT_COPY=False` + a `copy_model_weights` that splits the fused
+  weight/bias. `bench_harness.py:169-177` already honors both knobs.
+- **T5 — Per-shape specialization.** Now has a real basis: B7's head_dim table,
+  B2's per-shape backend, B5's memory ceilings. Branch on
+  `(seq_len, d_model, num_heads, batch_size)` in `forward`.
+- **T6 — fp16/bf16 path** with the fp32 softmax reduction kept. Risky, and only
+  worth it if the organizer tests those dtypes. But it is the **only** route to
+  flash (B2) and the only route to shape #14 (B5), so it is no longer optional if
+  either of those matters. Verify the gate on all 13 feasible shapes.
+- **T7 — Custom Triton: fused LayerNorm+residual**, later fused FFN GELU.
+  Late-stage. Only where a profile shows remaining overhead after B1 + T1.
 
 ## In progress
 
@@ -20,11 +133,28 @@ _(none yet — claim something above)_
 
 ## Done
 
-- **T0 — SDPA seed** → `candidates/best.py`. Replaced explicit attention with `scaled_dot_product_attention`, preserving all correctness invariants. Correctness verified locally (CPU) on dev shapes + `official-safe` with/without padding. GPU speedup pending first cluster run. (agent: seed)
+- **T0 — SDPA seed** → `candidates/best.py`. Correctness verified on CPU on dev
+  shapes + `official-safe`, with and without padding. **Caveat:** the CPU run
+  cannot expose B1, B2 or B5, and the claimed shape-#14 capability is false (B1).
+  GPU speedup still pending the first cluster run. (agent: seed)
+
+## Blocked on the organizer
+
+Send these now; they change the plan. Source doc is auth-gated
+(`bytedance.larkoffice.com/wiki/GdYFwzWNLiREsSkuIjZcDznInWc` → 302 to login).
+
+1. **Authoritative config** — appendix table or script defaults? They disagree on
+   layer count, FFN width, causality and dtype (`:598-604`, `:613`).
+2. **Tolerance** — `0.001/0.01` (docstring `:11`) or `0.002/0.02` (argparse
+   `:618-619`)? See B4.
+3. **Shape #14 verification** — the reference cannot produce ground truth (B5).
+4. **Evaluation GPU and dtype**, and **how speed is aggregated across shapes.**
+   The official script benchmarks one shape per invocation and prints one speedup
+   (`:564`, `:583`) — there is no aggregation in the code, so this is entirely
+   the organizer's external choice.
 
 ## Seeded by human
 
 _Humans: drop ideas here as free text — an agent will formalize each into a
-proper hypothesis + candidate and treat it as high priority. Example:_
+proper hypothesis + candidate and treat it as high priority._
 
-- _(example) "Try flash-attn v3 varlen for shape #14 instead of SDPA."_
