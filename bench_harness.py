@@ -131,7 +131,7 @@ def _geomean(vals: List[float]) -> float:
 def eval_one_shape(
     shape_id: int,
     cfg_dict: dict,
-    candidate_path: str,
+    module,
     device: torch.device,
     dtype: torch.dtype,
     *,
@@ -146,7 +146,11 @@ def eval_one_shape(
     rounds: int,
 ) -> dict:
     """Evaluate one shape. Never raises: all failures are captured into the
-    returned record so one bad shape can't abort the sweep."""
+    returned record so one bad shape can't abort the sweep.
+
+    ``module`` is a candidate module already imported by the caller (B9: the
+    candidate is loaded ONCE for the whole sweep, not per shape, so a
+    ``torch.compile`` cache built on shape N survives into shape N+1)."""
     rec: dict = {
         "shape_id": shape_id,
         "config": cfg_dict,
@@ -165,7 +169,6 @@ def eval_one_shape(
         config = ttb.TransformerConfig(**cfg_dict)
         config.validate()
 
-        module = load_candidate(candidate_path)
         strict = bool(getattr(module, "STRICT_WEIGHT_COPY", True))
         custom_copy = getattr(module, "copy_model_weights", None)
 
@@ -221,34 +224,53 @@ def eval_one_shape(
                 rec["status"] = "correctness_fail"
 
         # ---- timing (skip if correctness already failed, unless caller wants it) ----
+        # Mirrors the organizer's benchmark_models() exactly (B8): one fixed
+        # input, warm up both models once, then alternate measurement order
+        # per round (baseline-then-optimized on even rounds, reversed on odd)
+        # to cancel thermal/clock-order bias instead of timing in two
+        # sequential blocks.
         if rec["status"] in ("ok", "baseline_oom"):
             x, mask = ttb.generate_random_case(
                 config=config, device=device, dtype=dtype,
                 seed=seed + 100000, padding_ratio=padding_ratio,
                 input_scale=input_scale,
             )
-            # candidate timing
             ttb.warmup_model(optimized, x, mask, warmup, device)
-            opt_samples: List[float] = []
-            for _ in range(rounds):
-                opt_samples.extend(ttb.benchmark_once(optimized, x, mask, repeats, device))
-            rec["opt_ms"] = _median(opt_samples)
-            # baseline timing (skip if it OOMs)
             if not baseline_oom:
                 try:
                     ttb.warmup_model(baseline, x, mask, warmup, device)
-                    base_samples: List[float] = []
-                    for _ in range(rounds):
-                        base_samples.extend(ttb.benchmark_once(baseline, x, mask, repeats, device))
-                    rec["baseline_ms"] = _median(base_samples)
-                    if rec["opt_ms"] and rec["opt_ms"] > 0:
-                        rec["speedup"] = rec["baseline_ms"] / rec["opt_ms"]
                 except RuntimeError as e:
                     if _is_oom(e):
+                        baseline_oom = True
                         rec["status"] = "baseline_oom"
-                        rec["baseline_ms"] = None
                     else:
                         raise
+
+            opt_samples: List[float] = []
+            base_samples: List[float] = []
+            try:
+                for round_index in range(rounds):
+                    if round_index % 2 == 0:
+                        if not baseline_oom:
+                            base_samples.extend(ttb.benchmark_once(baseline, x, mask, repeats, device))
+                        opt_samples.extend(ttb.benchmark_once(optimized, x, mask, repeats, device))
+                    else:
+                        opt_samples.extend(ttb.benchmark_once(optimized, x, mask, repeats, device))
+                        if not baseline_oom:
+                            base_samples.extend(ttb.benchmark_once(baseline, x, mask, repeats, device))
+            except RuntimeError as e:
+                if _is_oom(e):
+                    baseline_oom = True
+                    rec["status"] = "baseline_oom"
+                    base_samples = []
+                else:
+                    raise
+
+            rec["opt_ms"] = _median(opt_samples)
+            if not baseline_oom and base_samples:
+                rec["baseline_ms"] = _median(base_samples)
+                if rec["opt_ms"] and rec["opt_ms"] > 0:
+                    rec["speedup"] = rec["baseline_ms"] / rec["opt_ms"]
     except Exception as e:  # noqa: BLE001 - capture everything into the record
         rec["status"] = "candidate_error"
         rec["error"] = f"{type(e).__name__}: {e}"
@@ -291,10 +313,29 @@ def run(args: argparse.Namespace) -> dict:
         torch.backends.cuda.matmul.allow_tf32 = args.allow_tf32
         torch.backends.cudnn.allow_tf32 = args.allow_tf32
 
+    # B9: load the candidate ONCE for the whole sweep. Previously this ran
+    # inside the per-shape loop, re-importing (and thus re-JIT-compiling,
+    # for torch.compile candidates) 12x per sweep.
+    try:
+        module = load_candidate(args.candidate)
+        load_error = None
+    except Exception as e:  # noqa: BLE001
+        module = None
+        load_error = f"{type(e).__name__}: {e}"
+
     per_shape: List[dict] = []
     for sid, cfg in shapes.items():
+        if module is None:
+            per_shape.append({
+                "shape_id": sid, "config": cfg, "status": "candidate_error",
+                "passed": None, "max_abs": None, "max_rel": None,
+                "failed_elems": None, "total_elems": None,
+                "baseline_ms": None, "opt_ms": None, "speedup": None,
+                "error": load_error,
+            })
+            continue
         rec = eval_one_shape(
-            sid, cfg, args.candidate, device, dtype,
+            sid, cfg, module, device, dtype,
             accuracy_trials=args.accuracy_trials, seed=args.seed,
             padding_ratio=args.padding_ratio, input_scale=args.input_scale,
             rtol=args.rtol, atol=args.atol,
@@ -340,9 +381,11 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--rtol", type=float, default=0.02)
     p.add_argument("--atol", type=float, default=0.002)
     p.add_argument("--seed", type=int, default=1234)
-    p.add_argument("--warmup", type=int, default=5)
-    p.add_argument("--repeats", type=int, default=20)
-    p.add_argument("--rounds", type=int, default=1)
+    # Match the organizer's official protocol defaults exactly (B8):
+    # torch_transformer_benchmark.py --warmup/--repeats/--benchmark-rounds.
+    p.add_argument("--warmup", type=int, default=20)
+    p.add_argument("--repeats", type=int, default=100)
+    p.add_argument("--rounds", type=int, default=3)
     p.add_argument("--matmul-precision", choices=("highest", "high", "medium"), default="high")
     p.add_argument("--allow-tf32", action=argparse.BooleanOptionalAction, default=True)
     p.add_argument("--out", default=None, help="also write JSON to this path")
