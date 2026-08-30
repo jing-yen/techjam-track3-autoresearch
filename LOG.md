@@ -41,3 +41,23 @@ several at once.
   weight-copy path end-to-end.
 
 **Next:** benchmark all three on A100-80 → first honest numbers.
+
+---
+
+### iter 4 · agent `opus-1` · direction `correctness-fix` · **B1 fixed**
+
+The review layer (Codex) found **B1**: `generate_random_case` returns an
+**all-True** mask (never `None`) at `padding_ratio<=0`, so the seed always built
+the additive `[B,1,S,S]` mask — disqualifying SDPA's flash backend on every shape
+and OOMing shape #14 (~1.2 TB mask). Verified against
+`torch_transformer_benchmark.py:255-259`.
+
+**Fix** (best.py + both variants): detect no-padding once (single sync), collapse
+the all-True mask to `None` so attention uses `is_causal` (flash/mem-efficient),
+keep the additive path only for real padding. Correct at padding 0.0 and 0.3
+(max_abs 1.4e-6); instrumented run confirms the all-True mask now routes to
+`is_causal` (additive:0, causal:1). Also corrected three false claims in
+PROGRAM.md (mask-never-None, #14 is ~18.6 TB not 40 GB/head, TF32 already on).
+
+The multi-agent loop worked: research layer found a real bug, implementation
+layer fixed and verified it. Real flash confirmation + #14 feasibility pending A100.

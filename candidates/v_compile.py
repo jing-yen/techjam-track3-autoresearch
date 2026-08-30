@@ -109,9 +109,14 @@ class UserOptimizedTransformer(BaselineTransformer):
         return x
 
     def forward(self, x, valid_token_mask=None):
+        # B1: collapse the all-True (no-padding) mask to None in eager code so the
+        # compiled region takes the fused is_causal path and never builds an
+        # additive [B,1,S,S] mask. The .all() sync stays outside torch.compile.
+        has_padding = valid_token_mask is not None and not bool(valid_token_mask.all())
+        eff_mask = valid_token_mask if has_padding else None
         if self._compiled is None:
             try:
                 self._compiled = torch.compile(self._forward_impl, mode=COMPILE_MODE)
             except Exception:
                 self._compiled = self._forward_impl  # fall back to eager if compile unavailable
-        return self._compiled(x, valid_token_mask)
+        return self._compiled(x, eff_mask)

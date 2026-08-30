@@ -155,9 +155,16 @@ class UserOptimizedTransformer(BaselineTransformer):
         x: torch.Tensor,
         valid_token_mask: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
+        # B1: the harness passes an all-True mask (never None) when there is no
+        # padding, so detect "no padding" once here (single sync) and pass None
+        # downward. That lets attention take the fused is_causal path (flash /
+        # mem-efficient, no [B,1,S,S] mask) instead of always building an additive
+        # mask -- which is also what OOMs shape #14.
+        has_padding = valid_token_mask is not None and not bool(valid_token_mask.all())
+        eff_mask = valid_token_mask if has_padding else None
         for layer in self.layers:
-            x = layer(x, valid_token_mask, self.config.causal)
+            x = layer(x, eff_mask, self.config.causal)
         x = self.final_norm(x)
-        if valid_token_mask is not None:
+        if has_padding:
             x = x.masked_fill(~valid_token_mask[..., None], 0)
         return x

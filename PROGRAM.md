@@ -112,3 +112,25 @@ The harness (`bench_harness.py`) emits per-shape `passed`, `max_abs`, `max_rel`,
 `baseline_ms`, `opt_ms`, `speedup`, and an aggregate `correctness_passed` +
 `median_speedup` + `geomean_speedup`. The swarm keeps the correct candidate with
 the best median speedup as `candidates/best.py`.
+
+## Corrections (verified against the organizer script, 2026-08-30)
+
+The review layer verified three earlier claims in this file against
+`torch_transformer_benchmark.py`:
+
+1. **`valid_token_mask` is never `None`.** At `padding_ratio<=0` (the default),
+   `generate_random_case` returns an **all-True** mask (`:255-259`), not `None`.
+   Candidates must therefore detect "no padding" themselves (e.g.
+   `not valid_token_mask.all()`) to reach the fused `is_causal` path — now done in
+   `candidates/best.py` and both variants (fix **B1**). This makes the line above
+   about "no `[S,S]` mask ... feasible for shape #14" true *as implemented*, which
+   it previously was not.
+2. **Shape #14 size.** The baseline materializes the full `[B,H,S,S]` scores: one
+   `(batch,head)` slice is ~37 GB fp32, and there are `32×16=512` of them →
+   **~18.6 TB**, not "40 GB/head". The baseline cannot produce a reference for #14
+   on any single GPU.
+3. **TF32 is already on** for both baseline and candidate (`allow_tf32=True`,
+   `matmul_precision="high"`), so "switch to tensor cores" is not an available win
+   — part of why the 0.002/0.02 gate is generous. Flash SDPA is fp16/bf16 only, so
+   at the default fp32 the best available backend is mem-efficient, not flash;
+   record the actual backend per shape on the GPU (TODO B2) before claiming flash.

@@ -98,10 +98,14 @@ class UserOptimizedTransformer(BaselineTransformer):
         self.layers = opt_layers
 
     def forward(self, x, valid_token_mask=None):
+        # B1: collapse the all-True (no-padding) mask to None so attention takes
+        # the fused is_causal path instead of building an additive mask.
+        has_padding = valid_token_mask is not None and not bool(valid_token_mask.all())
+        eff_mask = valid_token_mask if has_padding else None
         for layer in self.layers:
-            x = layer(x, valid_token_mask, self.config.causal)
+            x = layer(x, eff_mask, self.config.causal)
         x = self.final_norm(x)
-        if valid_token_mask is not None:
+        if has_padding:
             x = x.masked_fill(~valid_token_mask[..., None], 0)
         return x
 
