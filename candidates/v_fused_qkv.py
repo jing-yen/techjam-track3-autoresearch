@@ -22,6 +22,12 @@ import torch.nn.functional as F
 
 from torch_transformer_benchmark import BaselineTransformer, TransformerConfig
 
+# Match the baseline's full-fp32 matmul precision (see v_compile.py).
+if torch.cuda.is_available():
+    torch.backends.cuda.matmul.allow_tf32 = False
+    torch.backends.cudnn.allow_tf32 = False
+    torch.set_float32_matmul_precision("highest")
+
 STRICT_WEIGHT_COPY = False  # names differ (fused qkv); use copy_model_weights below
 
 

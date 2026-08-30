@@ -30,6 +30,14 @@ import torch.nn.functional as F
 
 from torch_transformer_benchmark import BaselineTransformer, TransformerConfig
 
+# Match the baseline's full-fp32 matmul precision. TF32 is off by default on
+# recent PyTorch, but pin it explicitly so correctness doesn't depend on the
+# ambient global flag (see v_compile.py for the failure mode this guards).
+if torch.cuda.is_available():
+    torch.backends.cuda.matmul.allow_tf32 = False
+    torch.backends.cudnn.allow_tf32 = False
+    torch.set_float32_matmul_precision("highest")
+
 STRICT_WEIGHT_COPY = True  # param names match the baseline exactly
 
 

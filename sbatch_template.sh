@@ -7,7 +7,7 @@ ${ACCOUNT_LINE}
 #SBATCH --gres=${GRES}
 #SBATCH --time=${TIME}
 #SBATCH --output=${LOGDIR}/%A_%a.out
-#SBATCH --array=0-${ARRAY_MAX}
+#SBATCH --array=0-${ARRAY_MAX}%1
 set -euo pipefail
 
 ${MODULE_LOAD}

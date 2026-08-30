@@ -25,6 +25,15 @@ from torch_transformer_benchmark import BaselineTransformer, TransformerConfig
 STRICT_WEIGHT_COPY = True
 COMPILE_MODE = "max-autotune" if torch.cuda.is_available() else "default"
 
+# Inductor's max-autotune GEMM/conv autotuner picks TF32 kernels for fp32
+# inputs by default, which drifts ~1e-3 from the baseline's full-fp32 matmuls
+# and fails the benchmark's correctness gate (observed on A100: max_abs up to
+# ~0.005 vs atol=0.002). Force full precision to match the baseline exactly.
+if torch.cuda.is_available():
+    torch.backends.cuda.matmul.allow_tf32 = False
+    torch.backends.cudnn.allow_tf32 = False
+    torch.set_float32_matmul_precision("highest")
+
 
 class SDPASelfAttention(nn.Module):
     def __init__(self, d_model: int, num_heads: int) -> None:
