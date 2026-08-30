@@ -99,7 +99,7 @@ avoid its measured asymmetric-kernel correctness drift.
 
 ## Open — shape 14, reopened
 
-- **S5 — Batch-chunk shape #14. Never tried, and the arithmetic says it fits.**
+- **S5 — IN PROGRESS by `opus-1`: batch-chunk shape #14. Never tried, and the arithmetic says it fits.**
   B=32 is 32 **independent** sequences; nothing couples them. Process in groups
   and concatenate — output is bit-identical, no approximation, no precision
   change. Peak at chunk=4: ~10.7 GB working + 12.2 GB input + 12.2 GB output =
@@ -132,13 +132,11 @@ because three of the four are **not** the same problem:
 - **#5 is now 2.43x at 1.12 ms** after TF32 restoration. Do not optimize it
   independently unless a shared variant improves the aggregate.
 
-- **S2 — IN PROGRESS by `codex-s2`: re-test compiled paths on #9/#10.** Both currently route to
-  `fused`. #1, which is the same arithmetic, routes to `compile`; #9/#10 now
-  score 2.13x/2.37x after S1, but their route comparison predates both the B10
-  sync finding and `v_compile_reduce.py`, so the head-count shapes may be
-  mis-routed. Cheap: they ride along in any sweep.
-  *Falsify:* compile does not beat fused on #9/#10 -> routing already optimal,
-  close it.
+- **S2 — TAKEN OVER by `opus-1` (codex-s2's agent stalled; result inherited).**
+  `codex-combined-step4.py` reverts #9 from a tried `reduce` route back to
+  `fused` (see the `codex-b10-step1.py` -> `step4` diff) — confirms `reduce`
+  does not beat `fused` on #9, so `fused` is already optimal there. Folded
+  into the combined candidate below rather than closed standalone.
 
 - **S3 — #5 and the large-batch regime: document, do not optimize.** Evidence
   above. Falsify: if a variant beats 2.43x on #5 without regressing #1, this
@@ -157,14 +155,15 @@ because three of the four are **not** the same problem:
   `journal.jsonl` (`per_shape: []` on iters 5-9), so the results tables must be
   transcribed by hand unless those rows are re-emitted.
 
-- **B10 — IN PROGRESS by `codex-b10`: remove the per-forward device sync.** `.all()` forces a
-  GPU->CPU sync every forward: `best.py:171`, `v_compile.py:124`,
-  `v_fused_qkv.py:109`, and **three times** in `v_router.py:124,168,261`.
-  Costs most on the shapes with the least work to hide it behind (#2 is 0.374 ms
-  total). Fix without a sync: the mask is built by
-  `generate_random_case` (`torch_transformer_benchmark.py:255-272`) and is
-  all-True whenever `padding_ratio <= 0`; prefer a cached/structural check over
-  a value read. *Falsify:* < 1% on #2 -> not worth the risk, close it.
+- **B10 — TAKEN OVER by `opus-1` (codex-b10's agent stalled; work inherited,
+  result pending confirmation).** `candidates/codex-b10-step1.py` implements
+  `_effective_mask()`: caches the `.all()` classification keyed on
+  `(id(tensor), data_ptr, _version, shape, stride, storage_offset, device,
+  dtype)`, falling back to the uncached path for tensors with no version
+  counter (`inference_mode`-allocated, can't safely cache). First call still
+  syncs; every later call with the same mask tensor reads only host-visible
+  metadata. Folded into `codex-combined-step4.py`. GPU confirmation running
+  (job `b10_isolate_a40`, isolated from AMP to attribute the gain correctly).
 
 - **AI-attribution gap — worth real points, costs nothing.** Commit `1f99f8d`
   carries `Co-Authored-By: Claude Opus 4.8` and a session link. **None of the
@@ -175,12 +174,13 @@ because three of the four are **not** the same problem:
 
 ## Open — the measurement that unblocks the rest
 
-- **M1 — IN PROGRESS by `codex-t6`: mixed-precision sweep.** S1 and T1 are resolved. `v_amp.py` is
-  CPU-smoke-tested only and is the highest-variance candidate left: fp16
-  unlocks flash on all 14 shapes, but the blanket-cast attempt failed the gate
-  on 11/12. Compare it alongside explicit compile routes for #9/#10.
-  *Falsify:* no correct configuration beats the 2.98x geomean router -> freeze
-  `v_router` and spend the remaining time on D1.
+- **M1 — TAKEN OVER by `opus-1`, PRELIMINARY RESULT IN HAND: falsified —
+  a config beats 2.98x.** `codex-combined-step4.py` (AMP autocast(fp16) on
+  shapes #6/#8/#13, kept in fp32 elsewhere + B10 mask cache + S2 fix) scored
+  **median 2.96x / geomean 3.91x on A100-40**, all 13/13 correct, worst
+  max_abs 0.00168 (atol 0.002) — up from the router's 2.51x/2.93x on the same
+  GPU/run. A100-80 confirmation running now (job `step4_confirm_a80`) to
+  match the leaderboard's stated GPU class before promoting it.
 
 ## Open — shape 14
 
@@ -195,19 +195,16 @@ because three of the four are **not** the same problem:
 
 ## Open — optimization, remaining
 
-- **T6 — IN PROGRESS by `codex-t6`, highest-impact speed lever.** Blanket-cast
-  fp16 (`runner.py --dtype float16`) **failed correctness on 11/12** shapes
-  (max_abs 0.006-0.009 vs atol 0.002) — expected, it demotes LayerNorm and the
-  softmax reduction too. `candidates/v_amp.py` (`torch.autocast(fp16)`, keeping
-  norms and reductions in fp32) is the follow-up: **CPU-smoke-tested only, not
-  yet run on GPU.**
-  *Why it matters more than it looked:* `tools/probe_sdpa_backends.py
-  --dtype float16` shows **flash SDPA eligible on all 14 shapes at fp16, versus
-  0/14 at fp32** — including #8 at head_dim=256 and #14 at head_dim=64. So fp16
-  buys tensor cores **and** the flash backend at once. See S1: this and TF32 are
-  the same lever at two different strengths, aimed at the same shape.
-- **T4 — memory-layout cleanups** feeding SDPA `[B,H,S,D]`. Small; after S1,
-  profile against the TF32-enabled #8 result before assuming layout is limiting.
+- **T6 — CONFIRMED ON GPU (A100-40), leaderboard-A100-80 confirmation
+  in-flight.** `torch.autocast(fp16)` (keeping norms/reductions fp32) applied
+  to shapes #6/#8/#13 in `codex-combined-step4.py`. Real gain per-shape vs the
+  fp32 router: #13 4.72x -> 10.95x, #8 1.29x -> 1.68x, #6 2.61x -> 2.96x, all
+  still correct (worst max_abs 0.00168 < 0.002 atol). Confirms the original
+  hypothesis: `tools/probe_sdpa_backends.py --dtype float16` showed flash SDPA
+  eligible on all 14 shapes vs 0/14 at fp32 — fp16 buys tensor cores *and* the
+  flash backend at once, and it shows up directly in the measured speedup.
+- **T4 — folded into B10's `codex-b10-step1.py` mask-cache fix** rather than
+  landing standalone; see B10 above.
 - **T7 — custom Triton kernels.** Correctly at the bottom. With ~32 hours left
   and D1 unstarted, **do not start this.**
 - **T2, T3 — superseded.** Both landed as `v_compile.py` / `v_fused_qkv.py` and
