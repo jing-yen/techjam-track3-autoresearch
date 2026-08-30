@@ -227,36 +227,32 @@ because three of the four are **not** the same problem:
   AMP routing needed.
 - **T4 — folded into B10's `codex-b10-step1.py` mask-cache fix** rather than
   landing standalone; see B10 above.
-- **T7 — SURVEY DONE (journal iter 27), target confirmed as AddNorm.
-  IN PROGRESS by `opus-1`: GPU correctness/speed still needed.** Real
-  headroom confirmed: shape #8 (`d_model=1024`, fp16 `amp` route) sits at
-  ~88.7 TFLOP/s / **~28% of A100's ~312 TFLOP/s dense fp16 peak** — not
-  "insufficient," reopening the item TECH_REPORT.md had marked skipped.
-  In scope per the organizer's own problem statement (`TikTok TechJam 2026
-  Information Document`, §3.1): "custom CUDA, Triton, TensorFlow, or
-  PyTorch implementations" is listed as a menu of equally-valid options,
-  not a mandate to drop below PyTorch — but real headroom + Technical
-  Execution's 35% weight (§3.6) makes one targeted kernel worth landing.
-  **Surveyed three candidates before committing** (not just the first
-  idea): AddNorm (residual-add fused into the immediately-following
-  LayerNorm) vs fused-FFN-epilogue (Linear+GELU, ~2x AddNorm's byte
-  savings since `ffn_dim == d_model` in every shape, but has to beat
-  cuBLAS/Inductor's already-tuned matmul — much higher implementation
-  risk) vs fused-attention+bias (SDPA's mem-efficient backend is already
-  tuned; not worth the risk for a first kernel). **AddNorm confirmed as
-  the right first target** — same risk-appropriate choice PROGRAM.md
-  itself lists first, matches Triton's own textbook LayerNorm-tutorial
-  pattern, self-contained and cheap to verify.
-  `candidates/v_triton_addnorm.py`: fp32-accumulated two-pass mean/var,
-  eps inside `sqrt`, masked loads/stores, returns both the normed output
-  and the raw pre-norm sum (needed as the next residual base) — verified
-  against the standard pattern. CPU-fallback path passes all 13 shapes
-  (max_abs ~1e-6). **Still needed: real Triton/GPU correctness, then
-  speed.** Honest expectation, not oversold: shape #8's 28%-of-peak
-  reading suggests it's GEMM-compute-bound, not bandwidth-bound on
-  add+norm traffic specifically — impact is likely real but modest, not
-  transformative. Value is a genuine correctness-verified custom-kernel
-  contribution either way.
+- **T7 — CONFIRMED ON REAL GPU, broader win than expected. NOT YET
+  INTEGRATED into `v_router2` — that's the remaining step.** (journal
+  iter 29, job `777483`). Real headroom confirmed: shape #8 sat at ~28% of
+  A100's dense fp16 Tensor Core peak — reopened an item `TECH_REPORT.md`
+  had marked "insufficient headroom." Surveyed three Triton targets
+  (AddNorm vs fused-FFN-epilogue vs fused-attention+bias) before
+  committing; AddNorm (residual-add fused into the immediately-following
+  LayerNorm) confirmed as the right risk-appropriate first target —
+  matches PROGRAM.md's own #7 and Triton's textbook LayerNorm-tutorial
+  pattern (fp32-accumulated two-pass mean/var, eps inside `sqrt`, masked
+  loads/stores, dual output for the next residual).
+  **A100-80 result, `candidates/v_triton_addnorm.py` vs `best.py`, both
+  fp32/TF32-on, official protocol, 13/13 correct** (max_abs 0.0006-0.0013,
+  comfortably under the 0.002 gate — higher than the ~1e-6 baseline as
+  expected from the kernel's own fp32-reduction rounding, still safely
+  inside tolerance): **geomean 1.88x → 2.02x (+7.4%)**, broader and bigger
+  than the "likely modest" expectation — #6 +40% (1.75x→2.44x), #8 +21%
+  (1.08x→1.31x, notable since #8 was expected to gain least being
+  GEMM-bound), #1 +18%, #11 +16%.
+  **This is a standalone comparison — plain SDPA attention, no
+  AMP/compile/reduce/fused routing, no B10 mask-cache — so it does not
+  change the leaderboard number yet.** Next: fold AddNorm into
+  `v_router2.py`'s shared block (applies orthogonally to routing/precision,
+  should stack) and re-verify specifically under the `amp` route's fp16
+  `autocast`, since the Triton kernel's internal fp32-forced accumulation
+  hasn't been tested for interaction with autocast's per-op dtype policy.
 - **T2, T3 — superseded.** Both landed as `v_compile.py` / `v_fused_qkv.py` and
   are now route targets inside `v_router.py`.
 
