@@ -153,16 +153,16 @@ because three of the four are **not** the same problem:
 
 ## Open — zero GPU cost, do these first
 
-- **D1 — the §3.5 deliverables. NOW THE TOP ITEM IN THE QUEUE.** A defensible
-  2.98x geomean is banked; the write-up is unstarted beyond
-  scaffolding. `README.md` and `TECH_REPORT.md` exist with **49 `<FILL>`
-  placeholders** guarded by `scripts/check_placeholders.sh`. Every one of them
-  is now fillable from `leaderboard.md` and `journal.jsonl` — no new
-  measurement is required. Also outstanding: the demo video (public YouTube,
-  linked in Devpost) and the Devpost description's five named fields.
-  *Blocked on:* per-shape data is prose in `leaderboard.md`, not in
-  `journal.jsonl` (`per_shape: []` on iters 5-9), so the results tables must be
-  transcribed by hand unless those rows are re-emitted.
+- **D1 — MOSTLY DONE.** `scripts/check_placeholders.sh` is down from 49 to
+  **5 remaining `<FILL>`s, all in README.md's team-member-contributions
+  table** (`README.md:283-287`) — real names/roles only the team can supply,
+  not fillable from any measurement or log. Everything else (environment
+  table, results tables, progress chart, per-shape numbers in both
+  README.md and TECH_REPORT.md) is filled with real, current data as of
+  iter 30 (`v_router2`, 2.99x median / 3.72x geomean). **Still outstanding,
+  not started:** the demo video (public YouTube, linked in Devpost) and the
+  Devpost description's five named fields — neither is a file in this repo
+  to check off; both need a human to actually record/write/submit.
 
 - **B10 — CONFIRMED, isolated from AMP for correct attribution** (job
   `b10_isolate_a40`, journal iter 16). `candidates/codex-b10-step1.py`'s
