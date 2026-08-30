@@ -236,7 +236,13 @@ def run_slurm(candidates: List[str], cfg: Dict, shapes: str, dtype: str,
         # retain COMPLETED jobs when `-t all` is requested, which made the
         # runner wait until max_wait_s even though result files already existed.
         q = _sh(f"squeue -j {job_id} -h", ssh_host=ssh_host, check=False)
-        if not q.stdout.strip():
+        # A transient ssh/network failure (nonzero returncode, e.g. ssh's own
+        # 255) also yields empty stdout -- indistinguishable from "job left
+        # the queue" if we only check stdout. That false positive previously
+        # made the runner report a job as failed/missing mid-run while it was
+        # still executing fine on the cluster. Only treat empty stdout as
+        # "done" when the check command itself actually succeeded.
+        if q.returncode == 0 and not q.stdout.strip():
             break
         if time.monotonic() > deadline:
             _sh(f"scancel {job_id}", ssh_host=ssh_host, check=False)
