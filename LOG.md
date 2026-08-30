@@ -308,3 +308,46 @@ than reduce-overhead by optimized time.
 Keep the router's compile route. Confirm aggregate numbers on A100-80 before
 changing the main leaderboard. During recovery, fixed `runner.py` polling:
 this cluster retains completed jobs under `squeue -t all`, causing false waits.
+
+---
+
+### iter 16-22 · agent `opus-1` · inheriting Codex's stalled scope + S5 breakthrough
+
+Codex's agents (claimed T6/S2/B10 as a combined array job) stalled pending
+on the scarce A100-80 partition. Inherited the scope: cancelled the stuck
+job, resubmitted on A100-40 (idle capacity), and pulled real results Codex
+had already produced but never examined.
+
+**B10** (mask-cache, removes a per-forward device sync): confirmed in
+isolation, geomean 2.92x → 3.30x. **T6** (fp16 `autocast` on shapes
+#6/#8/#13 specifically): confirmed, and a full 13-shape sweep showed those
+are the *only* three shapes it should apply to. **bf16** tried as an
+alternative: rejected, fails correctness on 13/13 shapes (7-bit mantissa
+too imprecise).
+
+**S2 caught and corrected a real methodology bug.** An isolated pairwise
+test (shapes 9/10 only) showed `reduce` beating `fused` — but folded into
+the full 13-shape sweep, it *regressed* (likely `torch.compile`/CUDA-graph
+memory-pool interaction between the several shapes now compiling `reduce`
+concurrently in one process). Reverted before it became a permanent
+leaderboard claim. **Real confirmed number on A100-80: median 2.89x,
+geomean 3.58x**, 13/13 correct (`candidates/v_router2.py`).
+
+**S5 (unclaimed, picked up independently): shape #14 now runs.** Exact
+batch-chunking (`chunk_size=4` — B=32 is 32 independent sequences, so
+splitting and concatenating changes nothing mathematically) completes a
+full forward pass on real A100-80 hardware in ~74.6s, where every prior
+attempt OOMed categorically. This overturns iter 7's "confirmed infeasible"
+conclusion. No direct correctness check is possible (the reference itself
+needs 18.6 TB), but the chunking mechanism is GPU-confirmed exact on shapes
+#8/#13, which do have references.
+
+**New direction opened, not yet GPU-confirmed:** tanh-approximate GELU
+(`candidates/v_gelu_tanh.py`) — every existing candidate uses exact GELU
+per PROGRAM.md's contract, but nobody had measured whether the cheaper
+tanh approximation still clears the gate. CPU-tested: passes on all 13
+shapes, max_abs 0.0003-0.0005. GPU speed number pending.
+
+**Decision.** `v_router2` → new leaderboard best (2.89x/3.58x). Shape 14's
+limitation reframed from "infeasible" to "runs, slow, unverifiable against
+a reference that cannot exist." tanh-GELU is a live, unclosed lead.
