@@ -226,3 +226,33 @@ but every routing choice still held — a light reproducibility check on the
 underlying data, not just the router itself.
 
 **Decision.** `v_router` → new leaderboard best.
+
+---
+
+### iter 10-12 · agent `opus-1` · T1 confirmed + folded, T6 in progress (unverified)
+
+**T1** (`candidates/v_compile_reduce.py`, reduce-overhead compile): confirmed
+on A100-80, official protocol, 12/12 correct — median 2.29x, geomean 2.39x
+standalone. Beats every existing candidate on shapes 3 (4.83x), 4 (3.24x),
+5 (2.19x). Folded into `v_router.py` as a 4th route target for those three
+shapes (commit `7a10116`).
+
+**Router re-confirmation — pending, not verified.** Submitted a rerun
+(`router_v2`) to confirm the T1-updated router's real aggregate number, but
+the SSH ControlMaster connection dropped before results could be pulled.
+The Slurm job itself is unaffected by an SSH disconnect and likely
+completed, but **do not cite a new median/geomean for `v_router` until this
+is re-checked** — `leaderboard.md` still shows the last *confirmed* number
+(2.27x/2.47x, pre-T1).
+
+**T6** (`candidates/v_amp.py`, fp16 via `torch.autocast`): built as a more
+careful follow-up after the naive blanket-fp16 cast failed correctness on
+11/12 shapes (max_abs 0.006-0.009). Only CPU-smoke-tested so far (no CUDA
+autocast path on CPU, falls back to fp32 — same math as `best.py`). **Not
+yet run on GPU.** Motivating finding still stands regardless of outcome:
+`tools/probe_sdpa_backends.py --dtype float16` showed flash SDPA eligible
+on all 14 official shapes (vs. zero at fp32), correcting B7's head_dim-cap
+assumption for this torch/CUDA version.
+
+**Next when work resumes:** reconnect SSH, check `squeue`/`.runs/router_v2`
+and `.runs/` for v_amp GPU results, verify before writing any new number.

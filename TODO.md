@@ -138,12 +138,6 @@ writing code against them.
 
 ## Open — optimization (unchanged intent, re-ranked)
 
-- **T1 — `torch.compile(mode="reduce-overhead")`** on the whole model. Do **after**
-  B1 and B9. Expect the launch-overhead-bound shapes (#2 batch=1, #3, #12 seq=32)
-  to gain most. Warm-compile each shape; verify guards do not break the gate.
-  Note `--compile-user` is an official flag (`:628`, applied at `:703` after
-  weight-copy and `.eval()`) — the organizer sanctions this — but do not depend on
-  the grader passing it. Compile inside the candidate.
 - **T2 — `torch.compile(mode="max-autotune")`.** Compare against T1 on the
   matmul-bound shapes (#8 d=1024, #6 batch=10000). Watch compile time against the
   30 min `--time` default in `cluster.config.json`.
@@ -153,7 +147,14 @@ writing code against them.
 - **T3 — Fused QKV projection** (`Linear(d_model, 3*d_model)`). Set
   `STRICT_WEIGHT_COPY=False` + a `copy_model_weights` that splits the fused
   weight/bias. `bench_harness.py:169-177` already honors both knobs.
-- **T6 — fp16/bf16 path** with the fp32 softmax reduction kept. Risky, and only
+- **T6 — IN PROGRESS.** Naive blanket-cast (`runner.py --dtype float16`)
+  failed correctness on 11/12 official-safe shapes (max_abs 0.006-0.009,
+  atol=0.002). `candidates/v_amp.py` (torch.autocast(fp16) instead of a
+  blanket cast) is the follow-up — CPU-smoke-tested only, **not yet run on
+  GPU**. Real motivation confirmed regardless of outcome:
+  `tools/probe_sdpa_backends.py --dtype float16` shows flash SDPA eligible
+  on all 14 shapes (0 at fp32) — corrects B7's head_dim-cap claim for this
+  torch/CUDA version (flash fired even on #8 head_dim=256, #14 head_dim=64). with the fp32 softmax reduction kept. Risky, and only
   worth it if the organizer tests those dtypes. But it is the **only** route to
   flash (B2) and the only route to shape #14 (B5), so it is no longer optional if
   either of those matters. Verify the gate on all 13 feasible shapes.
@@ -166,6 +167,10 @@ _(none yet — claim something above)_
 
 ## Done
 
+- **T1 — `torch.compile(mode="reduce-overhead")`** → `candidates/v_compile_reduce.py`.
+  A100-80, official protocol: 12/12 correct, median 2.29x / geomean 2.39x
+  standalone. Beats every existing candidate on shapes 3/4/5. Folded into
+  `v_router.py`'s route table as a 4th target (iter 10-11).
 - **T5 — Per-shape dispatch** → `candidates/v_router.py`. Routes each shape to
   whichever of best/v_compile/v_fused_qkv empirically won it (measured, not
   the head_dim/backend-table heuristic originally proposed — the three
