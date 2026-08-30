@@ -227,13 +227,17 @@ because three of the four are **not** the same problem:
   AMP routing needed.
 - **T4 — folded into B10's `codex-b10-step1.py` mask-cache fix** rather than
   landing standalone; see B10 above.
-- **T7 — REOPENED, real headroom found, claimable.** Previously deprioritized
-  ("profiling showed insufficient headroom" — `TECH_REPORT.md`'s own §4
-  table) — that call is now out of date. Roofline check on shape #8 (the
-  most compute-heavy shape, `batch=64,seq=128,d_model=1024,heads=4`, on the
-  fp16 `amp` route per `v_router2.py`): 420.9 GFLOP in 4.747 ms = **~88.7
+- **T7 — REOPENED, real headroom found. Needs a genuine survey before
+  committing to one kernel — do not just extend the draft below without
+  checking alternatives first.** Previously deprioritized ("profiling
+  showed insufficient headroom" — `TECH_REPORT.md`'s own §4 table) — that
+  call is now out of date. Roofline check on shape #8 (the most
+  compute-heavy shape, `batch=64,seq=128,d_model=1024,heads=4`, on the fp16
+  `amp` route per `v_router2.py`): 420.9 GFLOP in 4.747 ms = **~88.7
   TFLOP/s against A100's ~312 TFLOP/s dense fp16 Tensor Core peak — only
-  ~28%.** Real remaining headroom, not "insufficient."
+  ~28%.** Real remaining headroom, not "insufficient." Shape #13
+  (`seq=1024`, the other outlier at 10.50x) is worth checking too — not yet
+  Roofline-analyzed.
   *Is this in scope?* Yes, explicitly. The organizer's own problem statement
   (`TikTok TechJam 2026 Information Document`, §3.1) lists optimization
   methods "such as operator fusion, memory layout optimization,
@@ -241,22 +245,37 @@ because three of the four are **not** the same problem:
   and **custom CUDA, Triton, TensorFlow, or PyTorch implementations**" — a
   menu of equally-valid options, not a mandate to drop below PyTorch, but
   real headroom + Technical Execution being 35% of the judging weight (§3.6)
-  makes one targeted kernel worth doing now.
-  *Starting point:* `candidates/v_triton_addnorm.py` — a first draft fusing
-  the `x = x + attention_out` residual add immediately followed by
-  `norm2`'s LayerNorm into one Triton kernel (matches `PROGRAM.md`'s own
-  listed target #7, "Fused LN+residual" — one HBM round-trip removed per
-  layer for the intermediate sum). CPU-fallback path (plain add+LayerNorm,
-  used when no CUDA) is correctness-verified on all 13 shapes (max_abs
-  ~1e-6). **GPU correctness and speed not yet verified — untested on the
-  actual Triton kernel path.** Before committing further to this specific
-  design: check whether a fused-FFN (Linear+GELU+Linear epilogue) target
-  would have higher expected value instead, since FFN dominates compute on
-  large-`ffn_dim` shapes like #8 — the AddNorm fusion mainly helps by
-  removing bandwidth, but #8's bottleneck may be compute-bound (matmul),
-  where a fused epilogue matters more than an HBM round-trip.
+  makes at least one targeted kernel worth landing.
+  **Please survey the actual design space before picking one, not just the
+  first idea that comes to mind** — the candidates below are starting
+  points to evaluate, not a preset answer:
+  - **AddNorm** (residual-add fused into the immediately-following
+    LayerNorm — PROGRAM.md's own listed target #7): a first draft exists at
+    `candidates/v_triton_addnorm.py`. CPU-fallback path is
+    correctness-verified on all 13 shapes (max_abs ~1e-6) — **the actual
+    Triton/GPU path is UNTESTED, both correctness and speed.** Cheapest,
+    lowest-risk target (reduction+elementwise, the standard "first Triton
+    kernel" pattern) but likely modest impact on #8 specifically, since
+    #8's ~28%-of-peak reading suggests it's GEMM-compute-bound, not
+    bandwidth-bound on add+norm traffic.
+  - **Fused FFN epilogue** (Linear+GELU epilogue fusion): every shape in
+    the catalog has `ffn_dim == d_model`, so the intermediate FFN
+    activation is the same size as `d_model` and gets written-then-reread
+    for GELU today — plausibly the higher-value target on #8 given the
+    compute-bound reading, but real risk: it has to actually beat
+    cuBLAS/Inductor's already-tuned matmul, which is a much bigger lift
+    than AddNorm (tile size, pipeline stages, register pressure all need
+    real tuning, not a first-kernel-sized task).
+  - **Fused attention+bias**: PROGRAM.md lists it, but SDPA's mem-efficient
+    backend is already a highly-tuned library kernel — beating it from
+    scratch is likely not worth the risk for a first custom kernel. Include
+    in the survey for completeness, but this is probably the wrong place
+    to start.
+  - Anything else the survey turns up that isn't on this list — these three
+    are what's been considered so far, not an exhaustive search.
   *Claim this by moving it to "In progress" with your agent-id before
-  starting, same as any other item.*
+  starting, same as any other item. Report back which target was chosen
+  and why, not just the implementation.*
 - **T2, T3 — superseded.** Both landed as `v_compile.py` / `v_fused_qkv.py` and
   are now route targets inside `v_router.py`.
 
