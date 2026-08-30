@@ -123,6 +123,27 @@ avoid its measured asymmetric-kernel correctness drift.
   *Note:* `select_shapes()` at `bench_harness.py:269-271` still hard-codes the
   exclusion. Either pass `--shapes 6` explicitly or widen `official-safe`.
 
+## Open — shape 14, reopened
+
+- **S5 — Batch-chunk shape #14. Never tried, and the arithmetic says it fits.**
+  B=32 is 32 **independent** sequences; nothing couples them. Process in groups
+  and concatenate — output is bit-identical, no approximation, no precision
+  change. Peak at chunk=4: ~10.7 GB working + 12.2 GB input + 12.2 GB output =
+  **~35 GB against 79.25 GB**. The measured OOM was 73.85 GB, only 6 GB over;
+  chunking clears it by 44 GB. ~20 lines in `forward`.
+  *Correctness:* #14 has no reference (baseline needs 18.6 TB), so validate the
+  **mechanism** on #8 and #13 instead — chunked vs unchunked must be identical
+  and both must pass the gate. Then report #14 as "runs, mechanism proven exact
+  on 8 and 13, unverifiable against a reference that cannot exist."
+  *Why it was skipped:* B5 recorded "not pursuing chunking per §3.3" — a call
+  made before the OOM was measured, when #14 looked hopeless rather than 6 GB
+  short.
+  *Falsify:* chunked output differs from unchunked on #8/#13, or #14 still OOMs
+  -> keep the current limitations text, which is already well evidenced.
+  *Together with S4 (shape 6), this takes the sweep from 12/14 to 14/14.*
+  Full analysis incl. why sparse/linear attention is disqualified:
+  `docs/research-shape14.md`.
+
 ## Open — post-S1 follow-ups
 
 Read `docs/research-sub2x.md` for the full derivation. Summary of the causes,
