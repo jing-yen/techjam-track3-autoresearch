@@ -15,6 +15,7 @@ import bench_harness as bh  # noqa: E402
 
 IDENTITY = os.path.join(HERE, "fixtures", "identity_candidate.py")
 SDPA = os.path.join(ROOT, "candidates", "best.py")
+ROUTER = os.path.join(ROOT, "candidates", "v_router.py")
 BROKEN = os.path.join(HERE, "fixtures", "broken_candidate.py")
 
 
@@ -52,6 +53,17 @@ def test_sdpa_correct_no_padding():
 def test_sdpa_correct_with_padding():
     d = bh.run(_args(SDPA, padding_ratio=0.4))
     assert d["correctness_passed"] is True, d["per_shape"]
+
+
+def test_router_correct_and_dispatches_by_shape():
+    # dev shapes aren't in v_router's route table -> exercises the fallback path.
+    d = bh.run(_args(ROUTER))
+    assert d["correctness_passed"] is True, d["per_shape"]
+    for r in d["per_shape"]:
+        assert r["passed"], f"shape {r['shape_id']} failed: {r}"
+    # official-safe shapes hit every route table entry at least once.
+    d2 = bh.run(_args(ROUTER, shapes="official-safe"))
+    assert d2["correctness_passed"] is True, d2["per_shape"]
 
 
 def test_broken_candidate_is_captured_not_raised():
