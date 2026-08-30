@@ -100,3 +100,39 @@ timing protocol doesn't match the official warmup/repeats/rounds spec) and B9
 specifically penalizes `v_compile`) are both still open. Re-measure once they
 land; `v_compile`'s real steady-state speedup is likely higher than shown.
 Shape #14 (B5) not yet attempted on GPU.
+
+---
+
+### iter 6 · agent `opus-1` · direction `measurement-fix` · **final numbers (B8+B9 fixed)**
+
+Fixed both caveats from iter 5 in `bench_harness.py`: B9 (candidate now
+loaded once per sweep, not re-imported per shape) and B8 (timing now mirrors
+`torch_transformer_benchmark.py:benchmark_models()` exactly — warmup=20,
+repeats=100, rounds=3, alternating baseline/optimized order per round).
+9/9 local tests + CPU smoke tests pass. Re-ran all three candidates on
+A100-80 (node xgph1, job 775208).
+
+**Result — these are the final, defensible numbers:**
+
+| candidate | median | geomean |
+|--|--|--|
+| best (seed) | 2.07x | 1.96x |
+| **v_compile** | **2.18x** | **2.25x** |
+| v_fused_qkv | 2.16x | 2.09x |
+
+All 12/12 `official-safe` shapes still pass on all three (max_abs ~1e-6,
+normal fp32 non-associativity — nowhere near the 0.002 gate).
+
+**This corrects iter 5's headline number.** The earlier "v_compile: 2.71x
+median / 2.53x geomean" was measured with the noisy short-warmup protocol and
+is **not real** — do not cite it. The honest number is that `v_compile`
+still leads, but only narrowly: 2.25x geomean vs. 2.09x (`v_fused_qkv`) and
+1.96x (seed). All three are legitimate >2x, fully-correct speedups; the
+compile variant's edge over a plain SDPA swap is real but modest, not the
+gap the first pass suggested.
+
+**Decision.** Leaderboard updated to iter 6's numbers (`v_compile` stays
+best, geomean-ranked). Next: shape #14 OOM-confirmation run (documented
+limitation, not expected to pass — see B5), then consider T5 (per-shape
+dispatch) now that the honest per-shape table shows where the real headroom
+is (#8 d=1024 barely moves at 1.09x; #2/#13 already near their ceiling).

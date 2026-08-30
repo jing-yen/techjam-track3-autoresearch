@@ -7,42 +7,47 @@ replace only if strictly better).
 |--|--|
 | best candidate | `candidates/v_compile.py` (SDPA + `torch.compile(mode="max-autotune")`) |
 | node_id | `v_compile` |
-| correctness | ✅ A100-80 (xgph1), `official-safe` (12/12 shapes), float32, max_abs = 0.0 exact |
-| median speedup | **2.71x** |
-| geomean speedup | **2.53x** |
+| correctness | ✅ A100-80 (xgph1), `official-safe` (12/12 shapes), float32, max_abs ~1e-6 (fp32 non-associativity, 4 orders under the 0.002 gate) |
+| median speedup | **2.18x** |
+| geomean speedup | **2.25x** |
 | dtype | float32 |
 | device | NUS SoC cluster, A100-80 PCIe (`gpu:a100-80:1`, node xgph1) |
-| updated by | opus-1 (iter 5) |
+| protocol | **official** — warmup=20, repeats=100, rounds=3, alternating baseline/optimized order (matches `torch_transformer_benchmark.py:benchmark_models`); candidate loaded once per sweep (B8+B9 fixed) |
+| updated by | opus-1 (iter 6) |
 
-**Caveat (see TODO.md B8/B9, still open):** these numbers use the harness's
-current timing protocol (warmup 5, repeats 20, rounds 1, sequential blocks) —
-noisier and order-biased vs. the official protocol (warmup 20, repeats 100,
-rounds 3, alternating). `v_compile` is additionally penalized by B9
-(candidate reloaded per shape, discarding the `torch.compile` cache 12x) — its
-true steady-state speedup is likely higher than shown here. Do not treat these
-as final; re-measure after B8+B9 land.
+**These are the final, honest numbers** — B8 (official timing protocol) and B9
+(candidate reloaded per shape, discarding the `torch.compile` cache) from
+TODO.md are both fixed as of this run. An earlier pass (iter 5, noisy
+short-warmup protocol) reported `v_compile` at 2.71x median / 2.53x geomean —
+that number was inflated by measurement noise, not real; use the numbers on
+this page, not that one, in the report.
 
-Runner-up: `candidates/v_fused_qkv.py` — median 2.39x, geomean 2.15x, 12/12
+Lead is narrow: `v_compile` (2.25x geomean) barely beats `v_fused_qkv`
+(2.09x) and `best`/seed (1.96x). All three are legitimate, fully-correct
+>2x speedups over the baseline; the compile variant's edge is real but
+modest, not the 2.7x it first looked like.
+
+Runner-up: `candidates/v_fused_qkv.py` — median 2.16x, geomean 2.09x, 12/12
 correct.
-Also verified: `candidates/best.py` (seed) — median 2.17x, geomean 1.95x,
+Also verified: `candidates/best.py` (seed) — median 2.07x, geomean 1.96x,
 12/12 correct.
 
 Shape #14 not yet attempted on GPU (B5: ~85 GB fp32 activations, expected to
 OOM even on A100-80 — documented limitation, not a blocker per TODO.md).
 
-## Per-shape speedups — `v_compile.py`, A100-80, `official-safe`
+## Per-shape speedups — `v_compile.py`, A100-80, `official-safe`, official protocol
 
 | shape | passed | baseline_ms | opt_ms | speedup |
 |--|--|--|--|--|
-| 1 | ✅ | 2.624 | 1.306 | 2.01x |
-| 2 | ✅ | 1.875 | 0.375 | 5.00x |
-| 3 | ✅ | 1.890 | 0.454 | 4.17x |
-| 4 | ✅ | 1.854 | 0.697 | 2.66x |
-| 5 | ✅ | 4.653 | 2.982 | 1.56x |
-| 7 | ✅ | 1.880 | 0.558 | 3.37x |
-| 8 | ✅ | 30.082 | 27.156 | 1.11x |
-| 9 | ✅ | 1.994 | 1.199 | 1.66x |
-| 10 | ✅ | 2.339 | 1.210 | 1.93x |
-| 11 | ✅ | 5.030 | 1.700 | 2.96x |
-| 12 | ✅ | 1.865 | 0.675 | 2.76x |
-| 13 | ✅ | 61.500 | 15.513 | 3.96x |
+| 1 | ✅ | 2.625 | 1.298 | 2.02x |
+| 2 | ✅ | 1.808 | 0.370 | 4.89x |
+| 3 | ✅ | 1.816 | 0.496 | 3.66x |
+| 4 | ✅ | 1.782 | 0.761 | 2.34x |
+| 5 | ✅ | 4.648 | 2.915 | 1.59x |
+| 7 | ✅ | 1.817 | 0.522 | 3.48x |
+| 8 | ✅ | 30.079 | 27.670 | 1.09x |
+| 9 | ✅ | 2.000 | 1.634 | 1.22x |
+| 10 | ✅ | 2.331 | 1.680 | 1.39x |
+| 11 | ✅ | 5.072 | 2.113 | 2.40x |
+| 12 | ✅ | 1.767 | 0.925 | 1.91x |
+| 13 | ✅ | 62.169 | 15.019 | 4.14x |
