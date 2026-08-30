@@ -11,3 +11,6 @@ result_*.json
 # OS / editor
 .DS_Store
 *.swp
+
+# Research loop scratch (proposals, reviews, run transcripts)
+.research/

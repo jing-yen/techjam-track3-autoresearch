@@ -1,0 +1,55 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["verdict", "summary", "findings"],
+  "properties": {
+    "verdict": {
+      "type": "string",
+      "enum": ["accept", "accept_with_changes", "reject"],
+      "description": "reject only if a blocker-severity finding invalidates the queue's top-ranked item"
+    },
+    "summary": {
+      "type": "string",
+      "description": "one or two sentences on the queue's overall soundness"
+    },
+    "findings": {
+      "type": "array",
+      "maxItems": 12,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["item_id", "severity", "category", "claim", "problem", "evidence", "suggested_fix"],
+        "properties": {
+          "item_id": {
+            "type": "string",
+            "description": "the TODO item ID this concerns, e.g. B1 or T4"
+          },
+          "severity": {
+            "type": "string",
+            "enum": ["blocker", "major", "minor"]
+          },
+          "category": {
+            "type": "string",
+            "enum": ["bad_citation", "wrong_arithmetic", "infeasible", "contradicts_source", "unfalsifiable", "misranked", "duplicate"]
+          },
+          "claim": {
+            "type": "string",
+            "description": "verbatim quote of the claim being challenged"
+          },
+          "problem": {
+            "type": "string",
+            "description": "what is actually wrong with it"
+          },
+          "evidence": {
+            "type": "string",
+            "description": "MANDATORY. A file:line, a journal.jsonl row, or a URL. No source, no finding."
+          },
+          "suggested_fix": {
+            "type": "string",
+            "description": "the corrected claim, or 'drop this item'"
+          }
+        }
+      }
+    }
+  }
+}

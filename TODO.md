@@ -8,6 +8,34 @@ Mark anything unmeasured `UNVERIFIED` and say what would settle it.
 
 ---
 
+## What actually scores (§3.6) — read before ranking anything
+
+| Criterion | Weight |
+|---|---|
+| Technical Execution | 35% |
+| Innovation & Problem Insight | 20% |
+| Impact & Relevance | 20% |
+| Feasibility & Practicality | 15% |
+| Presentation & Communication | 10% (final event only) |
+
+**There is no line item for raw speedup.** Nothing in the rubric scores
+milliseconds. What scores is well-structured code, thoughtful architecture,
+sharpness of problem understanding, and a demo that runs reliably.
+
+§3.2: "The use of AI tools is encouraged so that the participants can implement
+different kernels for different input shapes in limited time."
+§3.5: "Provide a clear tech report including details on the AI skills/tools used
+to get bonus points."
+
+- The autoresearch swarm is **not a detour from the task**. It is the strongest
+  available answer to Innovation (20%) and to half of Technical Execution (35%),
+  and it is explicitly what the organizers asked for. A measured 1.4x with a
+  documented agent loop, a correctness ledger and a per-shape dispatch table
+  beats an undocumented 2x.
+- Corollary: the §3.5 deliverables are **not overhead to do after the kernel
+  work. They are most of the score.** Start them in parallel, now.
+- §3.3 puts "production-ready deployment" out of scope. Do not gold-plate.
+
 ## READ FIRST — three PROGRAM.md claims are false
 
 Verified against the organizer script on 2026-08-30. Fix these beliefs before
@@ -50,12 +78,15 @@ writing code against them.
   Keep the existing additive-mask branch for the padded case.
   Gate: re-run `--padding-ratio 0.0` and `--padding-ratio 0.3` — both must pass.
 
-- **B4 — Develop against the TIGHT tolerance.** The script's docstring
-  (`torch_transformer_benchmark.py:11`) says `atol=0.001, rtol=0.01`; its argparse
-  (`:618-619`) says `0.002 / 0.02`. The repo hardcodes the loose pair
-  (`PROGRAM.md:12`, `README.md`, `bench_harness.py:340-341`). Flip the harness
-  defaults to `--rtol 0.01 --atol 0.001`. Free safety margin against a grader who
-  uses the documented numbers. Blocked-on-organizer: which pair is authoritative.
+- **B4 — RESOLVED, no action needed. Tolerance is `rel < 0.02, abs < 0.002`.**
+  Problem statement §3.2: "the diff should be small enough (relative error <
+  0.02, abs error < 0.002)". This matches the argparse defaults at
+  `torch_transformer_benchmark.py:618-619` and what the repo already uses
+  (`PROGRAM.md:12`, `bench_harness.py:340-341`). The docstring at
+  `torch_transformer_benchmark.py:11` (`atol=0.001, rtol=0.01`) is **stale text
+  the organizer never updated** — ignore it. An earlier revision of this file
+  told you to develop against the tight pair. That was over-cautious. Keep
+  0.002/0.02 and do not change the harness defaults.
 
 - **B8 — Match the official timing protocol in `bench_harness.py`.**
   Official: warmup 20, repeats 100, rounds 3, **alternating** baseline/candidate
@@ -96,8 +127,8 @@ writing code against them.
   ~43 GB fp16**. `cluster.config.json` defaults to `gpu:a100-80:1` **and** fp32 →
   impossible even with a perfect kernel. fp16 on A100-80 is borderline; H100-96
   fp16 fits. The only fp32 path is chunking over the batch, which changes what the
-  measured latency means. **Do not spend a day here before the organizer answers
-  how #14 is verified** (the reference cannot produce ground truth at all —
+  measured latency means. **RESOLVED — do not spend hours here.** §3.5 wants it as a documented
+  limitation, not a solved shape. See "Resolved by the problem statement" (the reference cannot produce ground truth at all —
   `torch_transformer_benchmark.py:97` materializes the scores).
 
 ## Open — optimization (unchanged intent, re-ranked)
@@ -138,20 +169,38 @@ _(none yet — claim something above)_
   cannot expose B1, B2 or B5, and the claimed shape-#14 capability is false (B1).
   GPU speedup still pending the first cluster run. (agent: seed)
 
-## Blocked on the organizer
+## Resolved by the problem statement (27 Aug 2026 revision)
 
-Send these now; they change the plan. Source doc is auth-gated
-(`bytedance.larkoffice.com/wiki/GdYFwzWNLiREsSkuIjZcDznInWc` → 302 to login).
+Read directly from TechJam Track 3 §3.1-3.7, not second-hand.
 
-1. **Authoritative config** — appendix table or script defaults? They disagree on
-   layer count, FFN width, causality and dtype (`:598-604`, `:613`).
-2. **Tolerance** — `0.001/0.01` (docstring `:11`) or `0.002/0.02` (argparse
-   `:618-619`)? See B4.
-3. **Shape #14 verification** — the reference cannot produce ground truth (B5).
-4. **Evaluation GPU and dtype**, and **how speed is aggregated across shapes.**
-   The official script benchmarks one shape per invocation and prints one speedup
-   (`:564`, `:583`) — there is no aggregation in the code, so this is entirely
-   the organizer's external choice.
+1. **Tolerance** — `relative error < 0.02, abs error < 0.002` (§3.2). See B4.
+2. **Shape table** — §3.7 matches `bench_harness.py:70-85` exactly. All 14 rows,
+   causal TRUE throughout. Our catalog is correct, no changes needed.
+3. **Evaluation GPU and speed aggregation — THERE IS NO ORGANIZER-RUN BENCHMARK.**
+   §3.2: "Optimize & test your codes on your own machine. Different methods may
+   be used to optimize the codes depending on the machine (GPU cards) you use."
+   §3.4: "You can download 1 of these, and run it on your own machine."
+   §3.5: the tech report must state "what the environment is (CPU, GPU, DISK, etc)".
+   - We choose the GPU. We run the benchmark. We report the numbers.
+   - There is no hidden grader, no fixed target hardware, and no cross-shape
+     aggregation formula, because nobody re-runs our code on their machine.
+   - The correctness gate is self-administered. Report it honestly and in full,
+     including the shapes that fail or cannot run.
+4. **Shape #14 is no longer a blocker.** §3.5 requires the README to carry "a
+   brief reflection on your solution's limitations and what you would improve
+   given more time". A documented, quantified OOM with the memory arithmetic
+   (~85 GB fp32 for seven live activations) is a legitimate deliverable, not a
+   disqualification. Do NOT burn the remaining hours trying to make it run.
+
+## Still worth getting
+
+- **Webinar recording** — 28 Aug, 3:00-3:45pm, linked from the problem statement.
+  45 minutes of organizer Q&A that may carry intent not in the written spec.
+- **B0 — confirm our script is the 27 Aug 6:25PM revision.** The statement says
+  `torch_transformer_benchmark.py` was updated that day. Our copy was committed
+  2026-08-30 16:41 (`e13d295`), after the update, and its argparse defaults
+  (`:618-619`) already match §3.2, so it is almost certainly current. Diff it
+  against the download link once. 30 seconds, removes a silent total-loss risk.
 
 ## Seeded by human
 
