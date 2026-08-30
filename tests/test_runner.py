@@ -35,7 +35,7 @@ def test_render_sbatch_substitutes_everything():
                candidates=["/w/a.py", "/w/b.py"], shapes="dev", dtype="float32", extra_args="")
     script = runner.render_sbatch(cfg, job)
     # Our template placeholders must all be substituted...
-    for ph in ("JOB_NAME", "PARTITION", "ACCOUNT_LINE", "GRES", "TIME", "LOGDIR",
+    for ph in ("JOB_NAME", "PARTITION_LINE", "ACCOUNT_LINE", "GRES", "TIME", "LOGDIR",
                "ARRAY_MAX", "MODULE_LOAD", "WORKDIR", "CANDIDATE_LIST", "SHAPES",
                "DTYPE", "DEVICE", "EXTRA_ARGS", "RESULTDIR", "PYTHON"):
         assert "${" + ph + "}" not in script, f"unsubstituted placeholder ${{{ph}}}"
@@ -45,9 +45,12 @@ def test_render_sbatch_substitutes_everything():
     assert "#SBATCH --account=myacct" in script
     assert "--partition=gpu" in script
     assert "/w/a.py" in script and "/w/b.py" in script
-    # empty account -> no account line
+    # empty account/partition -> those lines are omitted entirely
     cfg["account"] = ""
-    assert "--account=" not in runner.render_sbatch(cfg, job)
+    cfg["partition"] = ""
+    script2 = runner.render_sbatch(cfg, job)
+    assert "--account=" not in script2
+    assert "--partition=" not in script2
 
 
 def test_local_mode_two_candidates():

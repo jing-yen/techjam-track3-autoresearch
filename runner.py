@@ -101,9 +101,10 @@ def render_sbatch(cfg: Dict, job: Dict) -> str:
     with open(template_path) as f:
         tmpl = f.read()
     account_line = f"#SBATCH --account={cfg['account']}" if cfg.get("account") else ""
+    partition_line = f"#SBATCH --partition={cfg['partition']}" if cfg.get("partition") else ""
     subs = {
         "JOB_NAME": job["job_name"],
-        "PARTITION": cfg["partition"],
+        "PARTITION_LINE": partition_line,
         "ACCOUNT_LINE": account_line,
         "GRES": cfg["gres"],
         "TIME": cfg["time"],

@@ -35,8 +35,8 @@ through git.
 python tests/test_bench_harness.py && python tests/test_runner.py
 python bench_harness.py --candidate candidates/best.py --shapes dev --device cpu
 
-# 2. Configure the cluster:
-$EDITOR cluster.config.json    # partition, account, gres, module load, ssh host
+# 2. Configure the cluster (SoC A100/H100 via Slurm) — see CLUSTER_SETUP.md:
+$EDITOR cluster.config.json    # ssh host (xlogin), gres, module load, remote workdir
 
 # 3. Evaluate the seed on real GPUs:
 python runner.py --candidates candidates/best.py --shapes all

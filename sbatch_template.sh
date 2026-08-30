@@ -2,7 +2,7 @@
 # Slurm array job template rendered by runner.py. One array task per candidate.
 # Placeholders in ${...} are substituted by runner.render_sbatch().
 #SBATCH --job-name=${JOB_NAME}
-#SBATCH --partition=${PARTITION}
+${PARTITION_LINE}
 ${ACCOUNT_LINE}
 #SBATCH --gres=${GRES}
 #SBATCH --time=${TIME}
