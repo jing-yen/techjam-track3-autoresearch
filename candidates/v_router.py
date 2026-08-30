@@ -36,10 +36,17 @@ import torch.nn.functional as F
 
 from torch_transformer_benchmark import BaselineTransformer, TransformerConfig
 
-if torch.cuda.is_available():
-    torch.backends.cuda.matmul.allow_tf32 = False
-    torch.backends.cudnn.allow_tf32 = False
-    torch.set_float32_matmul_precision("highest")
+# TODO.md S1: the old blanket "disable TF32 at import" here forced full fp32
+# for EVERY route target, including best/reduce/fused which never touch
+# torch.compile and so can't hit the asymmetric-kernel-selection bug that
+# motivated it (Inductor's max-autotune picking a TF32 kernel for the
+# candidate while the baseline's eager cuBLAS matmul stayed off-TF32). That
+# also silently overrode the harness's own default (allow_tf32=True, matching
+# the organizer's config) for the baseline too, since these are process-
+# global flags read at import time, before harness's own default is set.
+# Scoped now: only the "compile" (max-autotune) target forces full precision;
+# everything else runs at whatever the harness/caller configured (default:
+# organizer's own TF32-on config), set per-dispatch in __init__ below.
 
 STRICT_WEIGHT_COPY = False  # dispatch target may be the fused-qkv layout
 
@@ -334,6 +341,22 @@ class UserOptimizedTransformer(BaselineTransformer):
 
         key = (config.batch_size, config.seq_len, config.d_model, config.num_heads)
         self._impl_name = _ROUTE.get(key, _FALLBACK)
+        if torch.cuda.is_available():
+            # Explicit both ways (not just "disable for compile") because this
+            # is a process-global flag and the harness sweeps many shapes/impls
+            # through one process -- a prior shape's override would otherwise
+            # leak into this one. Non-compile paths restore the harness's own
+            # defaults (bench_harness.py --allow-tf32/--matmul-precision,
+            # True/"high", matching the organizer's own config) rather than
+            # forcing full precision everywhere.
+            if self._impl_name == "compile":
+                torch.backends.cuda.matmul.allow_tf32 = False
+                torch.backends.cudnn.allow_tf32 = False
+                torch.set_float32_matmul_precision("highest")
+            else:
+                torch.backends.cuda.matmul.allow_tf32 = True
+                torch.backends.cudnn.allow_tf32 = True
+                torch.set_float32_matmul_precision("high")
         self._impl = _IMPLS[self._impl_name](config)
 
     def forward(self, x, valid_token_mask=None):
