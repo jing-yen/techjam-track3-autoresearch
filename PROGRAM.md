@@ -134,3 +134,9 @@ The review layer verified three earlier claims in this file against
    — part of why the 0.002/0.02 gate is generous. Flash SDPA is fp16/bf16 only, so
    at the default fp32 the best available backend is mem-efficient, not flash;
    record the actual backend per shape on the GPU (TODO B2) before claiming flash.
+   **Settled (B2, iter 8):** measured directly on A100-80 via
+   `tools/probe_sdpa_backends.py` — flash is eligible on **zero** of the 14
+   official shapes at fp32, including small-head-dim ones. `mem_efficient`
+   fires on all 14. So the "biggest single win" (line ~62 above) has actually
+   been mem-efficient SDPA the whole time, not flash — correct any report
+   language accordingly. Raw data: `docs/sdpa_backend_probe.json`.

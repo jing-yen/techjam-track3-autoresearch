@@ -1,0 +1,288 @@
+{
+  "device": "cuda",
+  "dtype": "float32",
+  "torch": "2.10.0+cu128",
+  "rows": [
+    {
+      "shape_id": 1,
+      "config": {
+        "batch_size": 64,
+        "seq_len": 128,
+        "d_model": 128,
+        "num_heads": 4,
+        "ffn_dim": 128,
+        "num_layers": 4,
+        "causal": true
+      },
+      "head_dim": 32,
+      "fires": "mem_efficient",
+      "eligible": {
+        "flash": false,
+        "flash_error": "No available kernel. Aborting execution.",
+        "mem_efficient": true,
+        "math": true
+      }
+    },
+    {
+      "shape_id": 2,
+      "config": {
+        "batch_size": 1,
+        "seq_len": 128,
+        "d_model": 128,
+        "num_heads": 4,
+        "ffn_dim": 128,
+        "num_layers": 4,
+        "causal": true
+      },
+      "head_dim": 32,
+      "fires": "mem_efficient",
+      "eligible": {
+        "flash": false,
+        "flash_error": "No available kernel. Aborting execution.",
+        "mem_efficient": true,
+        "math": true
+      }
+    },
+    {
+      "shape_id": 3,
+      "config": {
+        "batch_size": 4,
+        "seq_len": 128,
+        "d_model": 128,
+        "num_heads": 4,
+        "ffn_dim": 128,
+        "num_layers": 4,
+        "causal": true
+      },
+      "head_dim": 32,
+      "fires": "mem_efficient",
+      "eligible": {
+        "flash": false,
+        "flash_error": "No available kernel. Aborting execution.",
+        "mem_efficient": true,
+        "math": true
+      }
+    },
+    {
+      "shape_id": 4,
+      "config": {
+        "batch_size": 16,
+        "seq_len": 128,
+        "d_model": 128,
+        "num_heads": 4,
+        "ffn_dim": 128,
+        "num_layers": 4,
+        "causal": true
+      },
+      "head_dim": 32,
+      "fires": "mem_efficient",
+      "eligible": {
+        "flash": false,
+        "flash_error": "No available kernel. Aborting execution.",
+        "mem_efficient": true,
+        "math": true
+      }
+    },
+    {
+      "shape_id": 5,
+      "config": {
+        "batch_size": 128,
+        "seq_len": 128,
+        "d_model": 128,
+        "num_heads": 4,
+        "ffn_dim": 128,
+        "num_layers": 4,
+        "causal": true
+      },
+      "head_dim": 32,
+      "fires": "mem_efficient",
+      "eligible": {
+        "flash": false,
+        "flash_error": "No available kernel. Aborting execution.",
+        "mem_efficient": true,
+        "math": true
+      }
+    },
+    {
+      "shape_id": 6,
+      "config": {
+        "batch_size": 10000,
+        "seq_len": 128,
+        "d_model": 128,
+        "num_heads": 4,
+        "ffn_dim": 128,
+        "num_layers": 4,
+        "causal": true
+      },
+      "head_dim": 32,
+      "fires": "mem_efficient",
+      "eligible": {
+        "flash": false,
+        "flash_error": "No available kernel. Aborting execution.",
+        "mem_efficient": true,
+        "math": true
+      }
+    },
+    {
+      "shape_id": 7,
+      "config": {
+        "batch_size": 64,
+        "seq_len": 128,
+        "d_model": 32,
+        "num_heads": 4,
+        "ffn_dim": 32,
+        "num_layers": 4,
+        "causal": true
+      },
+      "head_dim": 8,
+      "fires": "mem_efficient",
+      "eligible": {
+        "flash": false,
+        "flash_error": "No available kernel. Aborting execution.",
+        "mem_efficient": true,
+        "math": true
+      }
+    },
+    {
+      "shape_id": 8,
+      "config": {
+        "batch_size": 64,
+        "seq_len": 128,
+        "d_model": 1024,
+        "num_heads": 4,
+        "ffn_dim": 1024,
+        "num_layers": 4,
+        "causal": true
+      },
+      "head_dim": 256,
+      "fires": "mem_efficient",
+      "eligible": {
+        "flash": false,
+        "flash_error": "No available kernel. Aborting execution.",
+        "mem_efficient": true,
+        "math": true
+      }
+    },
+    {
+      "shape_id": 9,
+      "config": {
+        "batch_size": 64,
+        "seq_len": 128,
+        "d_model": 128,
+        "num_heads": 1,
+        "ffn_dim": 128,
+        "num_layers": 4,
+        "causal": true
+      },
+      "head_dim": 128,
+      "fires": "mem_efficient",
+      "eligible": {
+        "flash": false,
+        "flash_error": "No available kernel. Aborting execution.",
+        "mem_efficient": true,
+        "math": true
+      }
+    },
+    {
+      "shape_id": 10,
+      "config": {
+        "batch_size": 64,
+        "seq_len": 128,
+        "d_model": 128,
+        "num_heads": 2,
+        "ffn_dim": 128,
+        "num_layers": 4,
+        "causal": true
+      },
+      "head_dim": 64,
+      "fires": "mem_efficient",
+      "eligible": {
+        "flash": false,
+        "flash_error": "No available kernel. Aborting execution.",
+        "mem_efficient": true,
+        "math": true
+      }
+    },
+    {
+      "shape_id": 11,
+      "config": {
+        "batch_size": 64,
+        "seq_len": 128,
+        "d_model": 128,
+        "num_heads": 16,
+        "ffn_dim": 128,
+        "num_layers": 4,
+        "causal": true
+      },
+      "head_dim": 8,
+      "fires": "mem_efficient",
+      "eligible": {
+        "flash": false,
+        "flash_error": "No available kernel. Aborting execution.",
+        "mem_efficient": true,
+        "math": true
+      }
+    },
+    {
+      "shape_id": 12,
+      "config": {
+        "batch_size": 64,
+        "seq_len": 32,
+        "d_model": 128,
+        "num_heads": 4,
+        "ffn_dim": 128,
+        "num_layers": 4,
+        "causal": true
+      },
+      "head_dim": 32,
+      "fires": "mem_efficient",
+      "eligible": {
+        "flash": false,
+        "flash_error": "No available kernel. Aborting execution.",
+        "mem_efficient": true,
+        "math": true
+      }
+    },
+    {
+      "shape_id": 13,
+      "config": {
+        "batch_size": 64,
+        "seq_len": 1024,
+        "d_model": 128,
+        "num_heads": 4,
+        "ffn_dim": 128,
+        "num_layers": 4,
+        "causal": true
+      },
+      "head_dim": 32,
+      "fires": "mem_efficient",
+      "eligible": {
+        "flash": false,
+        "flash_error": "No available kernel. Aborting execution.",
+        "mem_efficient": true,
+        "math": true
+      }
+    },
+    {
+      "shape_id": 14,
+      "config": {
+        "batch_size": 32,
+        "seq_len": 100000,
+        "d_model": 1024,
+        "num_heads": 16,
+        "ffn_dim": 1024,
+        "num_layers": 2,
+        "causal": true
+      },
+      "head_dim": 64,
+      "fires": "mem_efficient",
+      "eligible": {
+        "flash": false,
+        "flash_error": "No available kernel. Aborting execution.",
+        "mem_efficient": true,
+        "math": false,
+        "math_error": "CUDA out of memory. Tried to allocate 37.25 GiB. GPU 0 has a total capacity of 79.25 GiB of which 20.59 GiB is free. Including non-PyTorch memory, this process has 58.65 GiB memory in use. Of the allo"
+      }
+    }
+  ]
+}

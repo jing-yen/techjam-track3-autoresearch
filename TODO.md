@@ -102,13 +102,18 @@ writing code against them.
 
 ## Open — measurement before more code
 
-- **B2 — Log which SDPA backend actually fires, per shape.** Flash is **fp16/bf16
-  only**, and the default dtype is fp32 everywhere
-  (`torch_transformer_benchmark.py:613`, `bench_harness.py:336`, `runner.py:256`).
-  So at fp32 the best available is mem-efficient. `PROGRAM.md:61`'s "biggest
-  single win" is **UNVERIFIED at fp32**. Settle by recording the backend per shape
-  under `torch.nn.attention.sdpa_kernel` and putting it in `journal.jsonl`.
-  Do this before B1 lands, so B1's delta is attributable.
+- **B2 — RESOLVED (iter 8, real A100 data).** `tools/probe_sdpa_backends.py`
+  forced each backend per official shape via `torch.nn.attention.sdpa_kernel`
+  on A100-80, fp32. **Flash is eligible on ZERO shapes** (confirms
+  fp16/bf16-only, independent of head_dim) — **`mem_efficient` fires on all
+  14**, including the small-head-dim shapes (#7 head_dim=8, #1/#12/#13
+  head_dim=32) that B7 predicted would be flash-eligible by head_dim alone.
+  `PROGRAM.md:61`'s "biggest single win [is flash]" is **false as measured**:
+  mem-efficient SDPA is what has been running the whole time, on every
+  candidate, in every prior benchmark run in this repo. This does not change
+  any correctness or speedup number already on the leaderboard (mem-efficient
+  was already what fired) — it just settles what to call it in the report.
+  See `.runs/sdpa_backend_probe.json` and `LOG.md` iter 8.
 
 - **B7 — head_dim limits.** sm80 flash caps head_dim at 128. Per shape:
   #8 = **256 (over the limit — flash impossible)**, #9 = **128 (exactly at it)**,

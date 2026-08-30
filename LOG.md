@@ -163,3 +163,28 @@ independent reasons. Documented in `leaderboard.md` with the real error
 traces — this is the §3.5 limitations reflection, not a gap to keep
 chasing. Not pursuing fp16/H100/batch-chunking (out of scope per TODO.md B5
 and rubric §3.3's "no gold-plating" note).
+
+---
+
+### iter 8 · agent `opus-1` · direction `measurement` · **B2 resolved: flash never fires at fp32**
+
+Wrote `tools/probe_sdpa_backends.py` to settle B2: force each SDPA backend
+(flash / mem-efficient / math) per official shape via
+`torch.nn.attention.sdpa_kernel` on A100-80, fp32, and record which are
+eligible. Real dispatch always picks the highest-priority eligible one, so
+this directly answers "what actually fires" without needing to trace kernel
+launches.
+
+**Result: flash is eligible on zero of the 14 official shapes.** `mem_efficient`
+fires on all 14 — including the small-head-dim shapes (#7 head_dim=8,
+#1/#12/#13 head_dim=32) that B7's table predicted would be flash-eligible by
+head_dim alone. Confirms flash is fp16/bf16-only *unconditionally* at this
+dtype, independent of head_dim. Raw data: `docs/sdpa_backend_probe.json`.
+
+**This settles an inaccurate claim.** `PROGRAM.md:61` calls flash "the
+biggest single win" — false as measured. Mem-efficient SDPA is what has
+actually been running in every candidate, in every benchmark run in this
+repo so far. No existing speedup number changes (mem-efficient was already
+firing under the hood); this only corrects what the report should call it.
+
+**Decision.** B2 closed. TODO.md updated with the real finding.
