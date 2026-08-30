@@ -132,7 +132,7 @@ because three of the four are **not** the same problem:
 - **#5 is now 2.43x at 1.12 ms** after TF32 restoration. Do not optimize it
   independently unless a shared variant improves the aggregate.
 
-- **S2 — Re-test the compiled path on #9 and #10.** Both currently route to
+- **S2 — IN PROGRESS by `codex-s2`: re-test compiled paths on #9/#10.** Both currently route to
   `fused`. #1, which is the same arithmetic, routes to `compile`; #9/#10 now
   score 2.13x/2.37x after S1, but their route comparison predates both the B10
   sync finding and `v_compile_reduce.py`, so the head-count shapes may be
@@ -157,7 +157,7 @@ because three of the four are **not** the same problem:
   `journal.jsonl` (`per_shape: []` on iters 5-9), so the results tables must be
   transcribed by hand unless those rows are re-emitted.
 
-- **B10 — remove the per-forward device sync B1 introduced.** `.all()` forces a
+- **B10 — IN PROGRESS by `codex-b10`: remove the per-forward device sync.** `.all()` forces a
   GPU->CPU sync every forward: `best.py:171`, `v_compile.py:124`,
   `v_fused_qkv.py:109`, and **three times** in `v_router.py:124,168,261`.
   Costs most on the shapes with the least work to hide it behind (#2 is 0.374 ms
@@ -175,7 +175,7 @@ because three of the four are **not** the same problem:
 
 ## Open — the measurement that unblocks the rest
 
-- **M1 — remaining sweep: S2 + T6.** S1 and T1 are resolved. `v_amp.py` is
+- **M1 — IN PROGRESS by `codex-t6`: mixed-precision sweep.** S1 and T1 are resolved. `v_amp.py` is
   CPU-smoke-tested only and is the highest-variance candidate left: fp16
   unlocks flash on all 14 shapes, but the blanket-cast attempt failed the gate
   on 11/12. Compare it alongside explicit compile routes for #9/#10.
@@ -195,7 +195,7 @@ because three of the four are **not** the same problem:
 
 ## Open — optimization, remaining
 
-- **T6 — IN PROGRESS, and now the most important open lever.** Blanket-cast
+- **T6 — IN PROGRESS by `codex-t6`, highest-impact speed lever.** Blanket-cast
   fp16 (`runner.py --dtype float16`) **failed correctness on 11/12** shapes
   (max_abs 0.006-0.009 vs atol 0.002) — expected, it demotes LayerNorm and the
   softmax reduction too. `candidates/v_amp.py` (`torch.autocast(fp16)`, keeping
