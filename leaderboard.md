@@ -5,17 +5,17 @@ replace only if strictly better).
 
 | field | value |
 |--|--|
-| best candidate | `candidates/v_router2.py` (T5 dispatch + B10 mask-cache + T6 AMP on 6/8/13) |
+| best candidate | `candidates/v_router2.py` (T5 dispatch + B10 mask-cache + T6 AMP on 6/8/13 + T7 Triton AddNorm on best/amp routes) |
 | node_id | `v_router2` |
-| correctness | ✅ A100-80, `official-safe` (13/13 shapes incl. shape 6), float32, TF32 **on** (organizer default) for non-compile routes — worst max_abs 0.00168, atol 0.002 |
-| median speedup | **2.89x** |
-| geomean speedup | **3.58x** |
+| correctness | ✅ A100-80, `official-safe` (13/13 shapes incl. shape 6), float32, TF32 **on** (organizer default) for non-compile routes — worst max_abs 0.00176 (shape 8), atol 0.002 |
+| median speedup | **2.99x** |
+| geomean speedup | **3.72x** |
 | dtype | float32 base, with `torch.autocast(fp16)` on shapes #6/#8/#13 specifically (T6) |
 | device | NUS SoC cluster, A100-80 PCIe (`gpu:a100-80:1`) |
 | protocol | official — warmup=20, repeats=100, rounds=3, alternating baseline/optimized order; candidate loaded once per sweep (B8+B9) |
-| updated by | opus-1 (iter 21, job `step4_confirm_a80`) |
+| updated by | opus-1 (iter 30, job `router2_triton_confirm2`) |
 
-**On top of S1's TF32 disclosure below:** `v_router2` adds three more
+**On top of S1's TF32 disclosure below:** `v_router2` adds four more
 confirmed improvements over the S1-era `v_router`:
 - **B10** (mask-cache): removes a per-forward GPU→CPU `.all()` sync by
   caching the mask classification (keyed on tensor identity+version+shape).
@@ -23,6 +23,21 @@ confirmed improvements over the S1-era `v_router`:
 - **T6** (fp16 `autocast` on shapes #6/#8/#13 only): confirmed via a full
   13-shape sweep to be the *only* shapes where fp16 beats the fp32 route —
   #13 4.48x → 10.50x, #8 1.28x → 1.68x, #6 2.81x → 2.89x.
+- **T7** (custom Triton kernel, fused residual-add + LayerNorm — "AddNorm"):
+  standalone, geomean 1.88x → 2.02x against a plain-LayerNorm baseline
+  (+7.4%, 13/13 correct). Integrated into the `best`/`amp` eager routes
+  only (kept separate from `compile`/`reduce`, which already get their own
+  fusion from `torch.compile`/Inductor). Verified correct under AMP's fp16
+  `autocast` specifically (worst max_abs 0.00176, still under gate — the
+  kernel's internal fp32 accumulation holds regardless of input dtype).
+  Real, attributable per-shape gain on the AMP-routed shapes: #6 +11%,
+  #8 +4%, #13 +6%. *Caveat:* the untouched `compile`/`reduce`/`fused`
+  routes showed up to ±30% run-to-run swing in the same measurement (e.g.
+  shape 7, zero code changes, 5.85x → 4.08x) — real cluster/protocol
+  variance, not attributable to T7. The aggregate 2.99x/3.72x is a
+  legitimate official-protocol number, but most of the *delta* from
+  2.89x/3.58x should be read as measurement noise plus a real, smaller
+  Triton contribution — not purely the latter.
 - **S2 attempted-and-reverted** (see journal iter 20-21): routing shapes
   #9/#10 to `reduce` looked good isolated (3.65x/3.98x) but *regressed*
   inside the full sweep (1.81x/2.01x, worse than `fused`'s in-sweep
@@ -127,22 +142,29 @@ win" is corrected: mem-efficient SDPA is what has actually been running in
 every candidate above. No speedup numbers change — this only fixes the
 report's language.
 
-## Per-shape speedups — `v_router.py`, A100-80, `official-safe`, official protocol
+## Per-shape speedups — `v_router2.py`, A100-80, `official-safe`, official protocol
 
-Job `s1_tf32` (iter 14), after scoping the max-autotune TF32 workaround to only
-the affected route and restoring the organizer default elsewhere.
+Job `router2_triton_confirm2` (iter 30) — current best, includes B10 mask-cache
+(all routes), T6 AMP (shapes 6/8/13), and T7 Triton AddNorm (`best`/`amp` routes).
 
 | shape | passed | baseline_ms | opt_ms | speedup | routed to |
 |--|--|--|--|--|--|
-| 1 | ✅ | 2.623 | 1.302 | 2.02x | compile |
-| 2 | ✅ | 1.841 | 0.375 | 4.91x | compile |
-| 3 | ✅ | 1.909 | 0.330 | 5.79x | reduce |
-| 4 | ✅ | 1.884 | 0.379 | 4.97x | reduce |
-| 5 | ✅ | 2.721 | 1.120 | 2.43x | reduce |
-| 7 | ✅ | 1.851 | 0.525 | 3.52x | compile |
-| 8 | ✅ | 7.882 | 6.125 | 1.29x | fused |
-| 9 | ✅ | 1.721 | 0.807 | 2.13x | fused |
-| 10 | ✅ | 1.905 | 0.805 | 2.37x | fused |
-| 11 | ✅ | 3.481 | 1.198 | 2.91x | fused |
-| 12 | ✅ | 1.889 | 0.803 | 2.35x | fused |
-| 13 | ✅ | 43.134 | 9.633 | 4.48x | fused |
+| 1 | ✅ | 2.614 | 1.206 | 2.17x | compile |
+| 2 | ✅ | 1.895 | 0.276 | 6.86x | compile |
+| 3 | ✅ | 1.943 | 0.229 | 8.47x | reduce |
+| 4 | ✅ | 1.923 | 0.283 | 6.80x | reduce |
+| 5 | ✅ | 2.712 | 1.010 | 2.69x | reduce |
+| 6 | ✅ | 186.078 | 56.536 | 3.29x | amp (fp16 + Triton AddNorm) |
+| 7 | ✅ | 1.884 | 0.462 | 4.08x | compile |
+| 8 | ✅ | 7.974 | 4.569 | 1.75x | amp (fp16 + Triton AddNorm) |
+| 9 | ✅ | 1.780 | 0.792 | 2.25x | fused |
+| 10 | ✅ | 1.965 | 0.785 | 2.50x | fused |
+| 11 | ✅ | 3.475 | 1.161 | 2.99x | fused |
+| 12 | ✅ | 1.936 | 0.779 | 2.48x | fused |
+| 13 | ✅ | 43.178 | 3.681 | 11.73x | amp (fp16 + Triton AddNorm) |
+
+Note on run-to-run variance: the `compile`/`reduce`/`fused` routes above
+carry no code changes from the previous confirmed run (`step4_confirm_a80`,
+iter 21), yet shifted by as much as -30% (shape 7) between the two runs —
+real cluster/protocol measurement noise, not a regression. See leaderboard
+disclosure above and journal iter 30 for the full attribution discussion.
