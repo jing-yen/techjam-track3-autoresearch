@@ -151,6 +151,13 @@ result is still a result:
 Candidate: `candidates/v_router2.py` (job `step4_confirm_a80`, iter 21 —
 functionally identical route table, verified by diff, see journal).
 
+> **STALE TABLE WARNING.** The per-shape rows below are the pre-AMP 12-shape
+> sweep. The current best (`v_router2`, iter 21) is **2.89x median / 3.58x
+> geomean over 13/13 shapes**, with #13 at 10.50x, #8 at 1.68x and #6 at 2.89x
+> (`leaderboard.md:10,:25`). The 13-shape per-shape numbers are not in
+> `journal.jsonl` (`per_shape` is empty on every row) and cannot be transcribed
+> mechanically. Re-emit that sweep's rows, then regenerate this table.
+
 | # | B | S | d | H | passed | baseline ms | ours ms | speedup | routed to |
 |--|--|--|--|--|--|--|--|--|--|
 | 1 | 64 | 128 | 128 | 4 | ✅ | 2.617 | 1.208 | **2.17x** | compile |

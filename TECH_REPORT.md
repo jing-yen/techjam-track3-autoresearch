@@ -16,8 +16,8 @@ published input shapes. Rather than hand-tuning a single kernel, we built an
 measures them against the organizer's own correctness and timing code, and keeps
 or prunes on the measured result.
 
-Headline: **median speedup 2.67x, geometric mean 2.98x** on an **NVIDIA A100-80
-PCIe** at **float32**, with **12 of 14 shapes** passing the correctness gate.
+Headline: **median speedup 2.89x, geometric mean 3.58x** on an **NVIDIA A100-80
+PCIe** at **float32**, with **13 of 14 shapes** passing the correctness gate.
 The two absent shapes are excluded on memory grounds, quantified in §8.
 
 ---
@@ -142,7 +142,7 @@ All 12 pass the correctness gate with `max_abs` ~0.001, still 2x under the 0.002
 absolute tolerance, measured with TF32 enabled. Shapes 6 and 14 are excluded on memory
 grounds (§8).
 
-Aggregates: **median 2.67x, geometric mean 2.98x** over the 12 shapes with a
+Aggregates: **median 2.89x, geometric mean 3.58x** over the 13 shapes with a
 reference. Sum-of-wall-clock across those 12 is 72.8 ms -> 23.4 ms (3.11x),
 reported because it is the figure that would matter if speed were aggregated by
 total time rather than per-shape ratio, and it does not flatter us.
