@@ -153,9 +153,6 @@ writing code against them.
 - **T3 — Fused QKV projection** (`Linear(d_model, 3*d_model)`). Set
   `STRICT_WEIGHT_COPY=False` + a `copy_model_weights` that splits the fused
   weight/bias. `bench_harness.py:169-177` already honors both knobs.
-- **T5 — Per-shape specialization.** Now has a real basis: B7's head_dim table,
-  B2's per-shape backend, B5's memory ceilings. Branch on
-  `(seq_len, d_model, num_heads, batch_size)` in `forward`.
 - **T6 — fp16/bf16 path** with the fp32 softmax reduction kept. Risky, and only
   worth it if the organizer tests those dtypes. But it is the **only** route to
   flash (B2) and the only route to shape #14 (B5), so it is no longer optional if
@@ -169,6 +166,13 @@ _(none yet — claim something above)_
 
 ## Done
 
+- **T5 — Per-shape dispatch** → `candidates/v_router.py`. Routes each shape to
+  whichever of best/v_compile/v_fused_qkv empirically won it (measured, not
+  the head_dim/backend-table heuristic originally proposed — the three
+  candidates' relative strengths didn't reduce to one clean rule across the
+  12-shape sample). A100-80, official protocol: 2.27x median / 2.47x
+  geomean, beats every single candidate, 12/12 correct. New leaderboard
+  best (iter 9). (agent: opus-1)
 - **T0 — SDPA seed** → `candidates/best.py`. Correctness verified on CPU on dev
   shapes + `official-safe`, with and without padding. **Caveat:** the CPU run
   cannot expose B1, B2 or B5, and the claimed shape-#14 capability is false (B1).
