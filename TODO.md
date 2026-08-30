@@ -342,15 +342,17 @@ here, not just "considered."
   architecture-specific, not universal, which is itself evidence the
   swarm found a genuine hardware-dependent effect rather than overfitting
   one benchmark run.
-- **L2 — CUDA-stream pipelining for shape #14's chunked forward.** Already
-  flagged in S5/leaderboard.md as the natural next lever if ~74.6s/forward
-  needs to be faster: overlap chunk N's compute with chunk N+1's
-  transfer/setup across the 8 sequential chunks in `v_chunked14.py`,
-  instead of running them fully serially. The literature review's own
-  "prefetch tile n+1 while tile n computes" pattern applies directly here
-  at the chunk level. Not yet attempted — no evidence yet on how much it
-  would help, or whether Python-level overhead dominates enough that it
-  wouldn't matter.
+- **L2 — CLOSED: falsified, pipelining is slower.** (journal iter 27,
+  job `777436`, `candidates/v_chunked14_streams.py`). Tested 2 alternating
+  CUDA streams across shape #14's 8 sequential chunks. **Result: 79.6s vs
+  74.6s sequential — ~6.6% *slower*, not faster.** As the candidate's own
+  docstring anticipated: chunks are already GPU-resident (no H2D/D2H
+  transfer to hide, unlike the classic "prefetch tile n+1" pattern), and
+  each chunk (batch=4, seq=100000) likely already saturates available SM
+  occupancy on its own — 2 streams add cross-stream sync/allocator overhead
+  without finding real idle capacity to fill. `v_chunked14.py` (sequential)
+  remains the better shape-14 implementation; do not adopt the streamed
+  variant.
 - **L3 — CLOSED: confirmed no dedup, explains iter 7's shape-14 finding,
   no leaderboard action.** (journal iter 25, `tools/l3_autotune_count.py`).
   Instrumented Inductor's autotune log for shape #1 (num_layers=4):
