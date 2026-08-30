@@ -51,7 +51,7 @@ Three things make it work:
 
 ## Setup and installation
 
-**Requirements:** Linux host with an NVIDIA GPU (we used `<FILL: GPU model>`),
+**Requirements:** Linux host with an NVIDIA GPU (we used an **NVIDIA A100-80 PCIe**),
 Python 3.11+, a CUDA-enabled PyTorch. The dev laptops are Apple Silicon and can
 run only the CPU correctness tests.
 
@@ -80,13 +80,13 @@ python bench_harness.py --candidate candidates/best.py --shapes dev --device cpu
 bash scripts/capture_env.sh > docs/environment.txt
 
 # 4. The headline result: all 14 official shapes on GPU.
-python runner.py --candidates candidates/best.py --shapes all --dtype <FILL: dtype>
+python runner.py --candidates candidates/best.py --shapes all --dtype float32
 
 # 5. Reproduce a single shape through the organizer's own script, unmodified,
 #    as an independent check that our harness agrees with it. Example, shape 1:
 python torch_transformer_benchmark.py \
   --batch-size 64 --seq-len 128 --d-model 128 --heads 4 \
-  --ffn-dim 128 --layers 4 --causal --dtype <FILL: dtype>
+  --ffn-dim 128 --layers 4 --causal --dtype float32
 ```
 
 Step 4 writes per-shape correctness and speedup as JSON and is what populates
@@ -99,28 +99,32 @@ organizer's script is worthless; they must match.
 
 ## Results
 
-Measured on `<FILL: GPU>`, `<FILL: dtype>`, torch `<FILL>`. Full environment in
+Measured on **NVIDIA A100-80 PCIe** (NUS SoC cluster, node xgph1), **float32**,
+official timing protocol (warmup 20, repeats 100, rounds 3, alternating order).
+Candidate: `candidates/v_router.py`, journal iter 9. Full environment in
 `docs/environment.txt`. Raw data in `journal.jsonl`.
 
-| # | B | S | d | H | L | passed | baseline ms | ours ms | speedup |
+| # | B | S | d | H | passed | baseline ms | ours ms | speedup | routed to |
 |--|--|--|--|--|--|--|--|--|--|
-| 1 | 64 | 128 | 128 | 4 | 4 | `<FILL>` | `<FILL>` | `<FILL>` | `<FILL>` |
-| 2 | 1 | 128 | 128 | 4 | 4 | `<FILL>` | `<FILL>` | `<FILL>` | `<FILL>` |
-| 3 | 4 | 128 | 128 | 4 | 4 | `<FILL>` | `<FILL>` | `<FILL>` | `<FILL>` |
-| 4 | 16 | 128 | 128 | 4 | 4 | `<FILL>` | `<FILL>` | `<FILL>` | `<FILL>` |
-| 5 | 128 | 128 | 128 | 4 | 4 | `<FILL>` | `<FILL>` | `<FILL>` | `<FILL>` |
-| 6 | 10000 | 128 | 128 | 4 | 4 | `<FILL>` | `<FILL>` | `<FILL>` | `<FILL>` |
-| 7 | 64 | 128 | 32 | 4 | 4 | `<FILL>` | `<FILL>` | `<FILL>` | `<FILL>` |
-| 8 | 64 | 128 | 1024 | 4 | 4 | `<FILL>` | `<FILL>` | `<FILL>` | `<FILL>` |
-| 9 | 64 | 128 | 128 | 1 | 4 | `<FILL>` | `<FILL>` | `<FILL>` | `<FILL>` |
-| 10 | 64 | 128 | 128 | 2 | 4 | `<FILL>` | `<FILL>` | `<FILL>` | `<FILL>` |
-| 11 | 64 | 128 | 128 | 16 | 4 | `<FILL>` | `<FILL>` | `<FILL>` | `<FILL>` |
-| 12 | 64 | 32 | 128 | 4 | 4 | `<FILL>` | `<FILL>` | `<FILL>` | `<FILL>` |
-| 13 | 64 | 1024 | 128 | 4 | 4 | `<FILL>` | `<FILL>` | `<FILL>` | `<FILL>` |
-| 14 | 32 | 100000 | 1024 | 16 | 2 | see limitations | — | — | — |
+| 1 | 64 | 128 | 128 | 4 | ✅ | 2.623 | 1.300 | **2.02x** | compile |
+| 2 | 1 | 128 | 128 | 4 | ✅ | 1.895 | 0.374 | **5.07x** | compile |
+| 3 | 4 | 128 | 128 | 4 | ✅ | 1.900 | 0.447 | **4.25x** | compile |
+| 4 | 16 | 128 | 128 | 4 | ✅ | 1.863 | 0.859 | **2.17x** | best |
+| 5 | 128 | 128 | 128 | 4 | ✅ | 4.653 | 2.495 | **1.86x** | fused |
+| 6 | 10000 | 128 | 128 | 4 | not run | — | — | — | excluded (see limitations) |
+| 7 | 64 | 128 | 32 | 4 | ✅ | 1.893 | 0.527 | **3.59x** | compile |
+| 8 | 64 | 128 | 1024 | 4 | ✅ | 29.936 | 26.284 | **1.14x** | fused |
+| 9 | 64 | 128 | 128 | 1 | ✅ | 1.974 | 1.345 | **1.47x** | fused |
+| 10 | 64 | 128 | 128 | 2 | ✅ | 2.332 | 1.368 | **1.70x** | fused |
+| 11 | 64 | 128 | 128 | 16 | ✅ | 5.074 | 1.858 | **2.73x** | fused |
+| 12 | 64 | 32 | 128 | 4 | ✅ | 1.874 | 0.793 | **2.36x** | fused |
+| 13 | 64 | 1024 | 128 | 4 | ✅ | 62.067 | 14.031 | **4.42x** | fused |
+| 14 | 32 | 100000 | 1024 | 16 | OOM | — | — | — | see limitations |
 
-Median speedup `<FILL>`, geomean `<FILL>`, across `<FILL>` shapes that produced a
-reference.
+**Median speedup 2.27x, geometric mean 2.47x**, across the 12 shapes that produced a
+reference. Sum-of-wall-clock across those 12: 117.9 ms -> 55.4 ms (2.13x).
+All 12 pass the correctness gate, max_abs ~1e-6 — four orders of magnitude
+under the 0.002 tolerance.
 
 ## Limitations, and what we would improve given more time
 
@@ -158,15 +162,46 @@ by reproducing at least one shape through the unmodified organizer script
 framework; we chose torch and did not touch
 `tensorflow_transformer_benchmark.py`.
 
-`<FILL: if B1 is still unfixed at submission, say so here — the seed candidate's`
-`is_causal fast path is unreachable because valid_token_mask is never None, which`
-`costs the FlashAttention backend on every shape. See TODO.md item B1.>`
+**We disabled TF32, which deviates from the organizer's default, and it matters.**
+`candidates/v_router.py:39-42` sets `allow_tf32 = False` and
+`float32_matmul_precision("highest")` at module import. These are process-global
+PyTorch flags, and the harness sets its own value before importing the candidate,
+so **the baseline is de-TF32'd too**. The organizer's script defaults TF32 **on**
+(`torch_transformer_benchmark.py:687`). Our comparison is therefore internally
+fair but measured in a non-default configuration in which both sides run well
+below the card's tensor-core throughput. We did this because `torch.compile`'s
+autotuner selected TF32 GEMM kernels for the candidate while the baseline used
+cuBLAS, drifting ~0.005 against the 0.002 absolute tolerance on 9 of 12 shapes.
+Given more time we would scope the pin to the compiled path only and re-measure
+both configurations, reporting both.
 
-**What we would do next, in order:** confirm which SDPA backend actually fires per
-shape and per dtype; land CUDA-graph capture for the launch-overhead-bound small
-shapes (#2, #3, #12); build a genuine per-shape dispatch table now that we know
-head_dim 256 on shape 8 exceeds the sm80 FlashAttention limit; and only then write
-Triton kernels, and only where a profile shows something left.
+**Shape 8 is at the fp32 arithmetic ceiling, and it is half our remaining
+runtime.** 420.9 GFLOP in 26.284 ms is 16.0 TFLOP/s against the A100's 19.5
+TFLOPS fp32 peak — **82% of theoretical**. It is also 47% of our total optimized
+wall clock across the 12 shapes. Its 1.14x is not inefficiency; it is the honest
+limit of fp32 on this card. The remaining lever is precision, not kernel work.
+
+**FlashAttention never runs in our configuration.** A direct probe
+(`tools/probe_sdpa_backends.py`, `docs/sdpa_backend_probe.json`) forcing each
+SDPA backend per shape found flash eligible on **0 of 14 shapes at fp32** and
+memory-efficient attention on 14 of 14. Every speedup we report comes from
+memory-efficient SDPA. At fp16 the same probe finds flash eligible on **all 14**,
+including the head_dim-256 shape — so fp16 would unlock both tensor cores and
+flash. A naive blanket fp16 cast failed correctness on 11 of 12 shapes
+(max_abs 0.006-0.009); an autocast variant that keeps LayerNorm and the softmax
+reduction in fp32 (`candidates/v_amp.py`) is written but was not validated on GPU
+before the deadline.
+
+**Shape 6 (batch 10000) was never run.** It is excluded from our `official-safe`
+sweep alongside shape 14 on memory grounds and we did not return to it.
+
+**What we would do next, in order:** re-measure with TF32 enabled symmetrically
+and report both configurations; validate the autocast fp16 path on GPU, which the
+backend probe shows would unlock flash on all 14 shapes; remove the per-forward
+`.all()` device sync that our padding-detection fix introduced; and only then
+consider Triton kernels, which our own profiling suggests would gain little —
+shape 8 is already at 82% of the fp32 ceiling and the small shapes are dominated
+by launch overhead that `torch.compile` already removes.
 
 ## Team member contributions
 

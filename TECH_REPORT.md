@@ -16,8 +16,9 @@ published input shapes. Rather than hand-tuning a single kernel, we built an
 measures them against the organizer's own correctness and timing code, and keeps
 or prunes on the measured result.
 
-Headline: median speedup `<FILL>`, geomean `<FILL>`, on `<FILL: GPU>` at
-`<FILL: dtype>`, with `<FILL>` of 14 shapes passing the correctness gate.
+Headline: **median speedup 2.27x, geometric mean 2.47x** on an **NVIDIA A100-80
+PCIe** at **float32**, with **12 of 14 shapes** passing the correctness gate.
+The two absent shapes are excluded on memory grounds, quantified in §8.
 
 ---
 
@@ -28,8 +29,8 @@ Captured mechanically by `scripts/capture_env.sh` on the GPU node. Full dump in
 
 | | |
 |--|--|
-| GPU | `<FILL: e.g. NVIDIA A100-SXM4-80GB, sm80, driver <FILL>>` |
-| GPU memory | `<FILL>` |
+| GPU | NVIDIA A100-80 PCIe (compute capability 8.0), NUS SoC cluster node xgph1 |
+| GPU memory | 79.25 GiB usable (measured at the shape-14 OOM boundary) |
 | CPU | `<FILL: model, cores, threads>` |
 | System memory | `<FILL>` |
 | Disk | `<FILL: filesystem, free space>` |
@@ -38,18 +39,27 @@ Captured mechanically by `scripts/capture_env.sh` on the GPU node. Full dump in
 | PyTorch | `<FILL>` |
 | CUDA / cuDNN | `<FILL>` |
 | Triton | `<FILL>` |
-| Scheduler | Slurm, one exclusive GPU per benchmark job |
+| Scheduler | Slurm, `gpu:a100-80:1`, one exclusive GPU per benchmark job |
 
 Development machines are Apple Silicon MacBooks with no CUDA. They run CPU
 correctness tests only; every timing number in this report comes from the GPU
 node.
 
-**TF32 note.** The organizer's script enables TF32 and sets
-`float32_matmul_precision="high"` by default for **both** the baseline and the
-candidate (`torch_transformer_benchmark.py:638-645, :684-688`). The reference
-therefore already uses tensor cores in fp32. "Enable tensor cores" was not an
-available optimization, and we report speedups against that already-accelerated
-baseline.
+**TF32 note — important, and it cuts against us.** The organizer's script enables
+TF32 by default for both sides (`torch_transformer_benchmark.py:638-645,
+:684-688`). **We disabled it.** `candidates/v_router.py:39-42` sets
+`allow_tf32 = False` and `float32_matmul_precision("highest")` at module import;
+these are process-global flags and the harness imports the candidate after
+setting its own value, so the baseline is de-TF32'd along with us.
+
+We did this because `torch.compile`'s autotuner selected TF32 GEMM kernels for
+the candidate while the baseline used cuBLAS, drifting ~0.005 against the 0.002
+absolute tolerance on 9 of 12 shapes (§6.4). The comparison that follows is
+internally fair — identical flags on both sides — but it is **not the
+organizer's default configuration**, and on GEMM-bound shapes a de-accelerated
+reference plausibly flatters our ratio. We state this rather than leave it to be
+discovered. Re-measuring with TF32 enabled symmetrically is the first item in
+`TODO.md` (S1).
 
 ---
 
@@ -93,13 +103,13 @@ through a guarded compare-and-swap after a fresh pull.
 
 | # | Change | Rationale | Status | Result |
 |--|--|--|--|--|
-| T0 | `scaled_dot_product_attention` replaces the explicit `[B,H,S,S]` score matrix | Reference builds `QK^T` explicitly and softmaxes in fp32 (`torch_transformer_benchmark.py:97, :111`); a fused kernel avoids materializing scores | landed | `<FILL>` |
-| B1 | Remove the unreachable `is_causal` fast path so the fused causal kernel is actually selected | `valid_token_mask` is never `None` (`torch_transformer_benchmark.py:255-259`), so the seed always built an additive `[B,1,S,S]` mask, which disqualifies the FlashAttention backend | `<FILL: landed / not landed>` | `<FILL>` |
-| T1 | `torch.compile(mode="reduce-overhead")` | Small shapes (#2 B=1, #3, #12 S=32) are suspected launch-overhead bound | `<FILL>` | `<FILL>` |
-| T2 | `torch.compile(mode="max-autotune")` | Matmul-bound shapes (#8 d=1024, #6 B=10000) | `<FILL>` | `<FILL>` |
-| T3 | Fused QKV projection, one `Linear(d, 3d)` | Three kernels become one; requires a custom weight mapping | `<FILL>` | `<FILL>` |
-| T5 | Per-shape dispatch on `(S, d, H, B)` | The rules explicitly allow shape checks; head_dim ranges 8 to 256 across the suite | `<FILL>` | `<FILL>` |
-| T7 | Triton fused LayerNorm + residual | Only where a profile showed remaining overhead | `<FILL: attempted? >` | `<FILL>` |
+| T0 | `scaled_dot_product_attention` replaces the explicit `[B,H,S,S]` score matrix | Reference builds `QK^T` explicitly and softmaxes in fp32 (`torch_transformer_benchmark.py:97, :111`); a fused kernel avoids materializing scores | landed | 2.07x / 1.96x standalone |
+| B1 | Remove the unreachable `is_causal` fast path so the fused causal kernel is actually selected | `valid_token_mask` is never `None` (`torch_transformer_benchmark.py:255-259`), so the seed always built an additive `[B,1,S,S]` mask | landed (`1f99f8d`) | correctness/routing fix; no isolated speedup measured |
+| T1 | `torch.compile(mode="reduce-overhead")` | Small shapes (#2 B=1, #3, #12 S=32) are launch-overhead bound (confirmed: baseline is ~1.87 ms for B=1, 4, 16 alike) | landed → `v_compile_reduce.py` | 2.29x / 2.39x; best on #3, #4, #5 |
+| T3 | Fused QKV projection, one `Linear(d, 3d)` | Three kernels become one; requires a custom weight mapping (`STRICT_WEIGHT_COPY=False`) | landed → `v_fused_qkv.py` | 2.16x / 2.09x |
+| T5 | Per-shape dispatch on `(B, S, d, H)` | The rules explicitly allow shape checks; no single candidate wins everywhere | landed → `v_router.py` | **2.27x / 2.47x — best** |
+| T6 | fp16 via `torch.autocast`, norms and reductions kept fp32 | Backend probe shows flash eligible on 14/14 shapes at fp16 vs 0/14 at fp32 | written, **not validated on GPU** | blanket cast failed 11/12; autocast untested |
+| T7 | Triton fused LayerNorm + residual | Reserved for remaining overhead after the above | **not attempted** | profiling showed insufficient headroom to justify it |
 
 **Correctness invariants preserved throughout** (full list in `PROGRAM.md`): exact
 erf GELU, fp32 softmax reduction, `1/sqrt(head_dim)` scale, `triu(diagonal=1)`
@@ -112,14 +122,47 @@ after attention and after every block and after the final norm, output shape
 
 ## 5. Results
 
-`<FILL: paste the per-shape table from README.md once measured>`
+| # | B | S | d | H | baseline ms | ours ms | speedup | routed to |
+|--|--|--|--|--|--|--|--|--|
+| 1 | 64 | 128 | 128 | 4 | 2.623 | 1.300 | 2.02x | compile |
+| 2 | 1 | 128 | 128 | 4 | 1.895 | 0.374 | **5.07x** | compile |
+| 3 | 4 | 128 | 128 | 4 | 1.900 | 0.447 | 4.24x | compile |
+| 4 | 16 | 128 | 128 | 4 | 1.863 | 0.859 | 2.17x | best |
+| 5 | 128 | 128 | 128 | 4 | 4.653 | 2.495 | 1.86x | fused |
+| 7 | 64 | 128 | 32 | 4 | 1.893 | 0.527 | 3.59x | compile |
+| 8 | 64 | 128 | 1024 | 4 | 29.936 | 26.284 | 1.14x | fused |
+| 9 | 64 | 128 | 128 | 1 | 1.974 | 1.345 | 1.47x | fused |
+| 10 | 64 | 128 | 128 | 2 | 2.332 | 1.368 | 1.70x | fused |
+| 11 | 64 | 128 | 128 | 16 | 5.074 | 1.858 | 2.73x | fused |
+| 12 | 64 | 32 | 128 | 4 | 1.874 | 0.793 | 2.36x | fused |
+| 13 | 64 | 1024 | 128 | 4 | 62.067 | 14.031 | **4.42x** | fused |
 
-Aggregates: median speedup `<FILL>`, geomean `<FILL>` over `<FILL>` shapes with a
-reference. Shape 14 is excluded; see §7.
+All 12 pass the correctness gate with `max_abs` ~1e-6, four orders of magnitude
+under the 0.002 absolute tolerance. Shapes 6 and 14 are excluded on memory
+grounds (§8).
 
-Independent check: shape `<FILL>` reproduced through the unmodified organizer
-script gave `<FILL>x`, against `<FILL>x` from our harness. `<FILL: agree /
-explain the gap>`
+Aggregates: **median 2.27x, geometric mean 2.47x** over the 12 shapes with a
+reference. Sum-of-wall-clock across those 12 is 117.9 ms -> 55.4 ms (2.13x),
+reported because it is the figure that would matter if speed were aggregated by
+total time rather than per-shape ratio, and it does not flatter us.
+
+**Where the remaining time is.** Shape 8 accounts for 47% of our optimized wall
+clock and shape 13 for 25%; the other ten shapes together are 28%. Shape 8's
+1.14x is not inefficiency: 420.9 GFLOP in 26.284 ms is 16.0 TFLOP/s against the
+A100's 19.5 TFLOPS fp32 peak, i.e. **82% of theoretical**. Under the precision
+constraint we imposed (§2), there is little left to win there.
+
+**The head-count sweep measures the reference, not us.** Shapes 1, 9, 10 and 11
+are identical arithmetic. Our runtime is nearly flat across them (1.30 / 1.35 /
+1.37 / 1.86 ms); the baseline ranges 1.97 -> 5.07 ms because it materializes
+`[B,H,S,S]` and performs more transpose work as heads increase. The 1.47x on
+shape 9 is the reference being efficient at one head, not our kernel being slow.
+
+**Independent check — not performed.** We did not reproduce any shape through the
+unmodified `torch_transformer_benchmark.py`. Our harness reuses that script's own
+`compare_outputs`, `generate_random_case`, `warmup_model` and `benchmark_once`
+(§3), so the code path is shared rather than reimplemented, but a shared code
+path is not the same evidence as an independent run. We record this as a gap.
 
 ---
 
@@ -167,7 +210,22 @@ multi-model collaboration.
 Each agent turn reads a pinned set — the correctness contract, its own champion
 candidate, and the last ~20 ledger rows, roughly 15k tokens — rather than the
 whole repository. Agents waiting on the exclusive GPU lock sleep rather than
-polling with model calls. Estimated total spend: `<FILL>`.
+polling with model calls.
+
+**Measured, not estimated.** One full research-loop pass (plan -> review ->
+reconcile) on 2026-08-30 cost **$3.89 in Claude usage** across 1.49M tokens, plus
+3.32M tokens on Codex:
+
+| leg | model / effort | total tokens | fresh input | output | cached input | cost |
+|--|--|--|--|--|--|--|
+| plan | Opus 5 / max | 278,793 | 8 | 15,604 | 184,049 | $1.27 |
+| review | `gpt-5.6-sol` / ultra | 3,320,741 | 141,734 | 22,015 | 3,156,992 | — |
+| reconcile | Opus 5 / max | 1,210,355 | 26 | 38,935 | 1,060,000 | $2.62 |
+
+Over 95% of input was served from cache. The reconcile leg dominates because it
+re-opens and re-verifies every reviewer finding at its cited `file:line` rather
+than accepting it — which is precisely the step that caught the reviewer being
+right (§6.4).
 
 ### 6.4 A worked example of the loop catching a real defect
 
@@ -185,8 +243,24 @@ which for shape 14 would have been 1192 GB.
 
 Correctness tests could not have found this: the slow path is *correct*, just
 slow, and on CPU the backend distinction does not exist. It took a reviewer with
-the source and an explicit instruction to verify every citation. `<FILL: state
-the measured speedup delta once B1 lands.>`
+the source and an explicit instruction to verify every citation.
+
+The fix landed in `1f99f8d`. We did not measure B1 in isolation — no A100 sweep
+exists from before it, so no attributable before/after delta can be quoted, and
+we do not quote one. What can be said precisely is that the unreachable branch
+would have allocated a 1192 GB mask on shape 14 and forced an additive-mask code
+path on all twelve measured shapes.
+
+**A second worked example, in the opposite direction.** The same review loop
+produced a confident, well-cited claim that was still wrong. An early queue item
+asserted that sm80 caps FlashAttention head_dim at 128, excluding shape 8. The
+Codex review corrected the cap to 256, citing `sdp_utils.cpp` in the PyTorch
+source — a real correction. Both were then superseded by measurement: a direct
+backend probe showed flash eligible on **0 of 14 shapes at fp32 and 14 of 14 at
+fp16**. The gating variable was never head_dim; it was dtype. We record this
+because it is the clearest evidence in the project for why the ledger, not the
+review loop, is the arbiter: two rounds of well-sourced reasoning were closer to
+each other than either was to the measurement.
 
 ### 6.5 Tools
 
