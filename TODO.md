@@ -87,9 +87,12 @@ avoid its measured asymmetric-kernel correctness drift.
 
 ---
 
-## Open — SHAPE 6 HAS NEVER BEEN RUN, AND PROBABLY WORKS
+## In progress
 
 - **S4 — Run shape #6. Highest expected value per minute in the queue.**
+  **Claimed by `codex-1`:** run router/max-autotune, fused-QKV, and
+  reduce-overhead concurrently; establish coverage and select a route only on
+  measured correctness plus optimized time.
   **Zero attempts.** No `journal.jsonl` row references shape 6; it has been
   excluded from every sweep since the first, because `bench_harness.py`'s
   `official-safe` set was defined as "everything except the two extreme-memory
@@ -214,10 +217,6 @@ because three of the four are **not** the same problem:
   and D1 unstarted, **do not start this.**
 - **T2, T3 — superseded.** Both landed as `v_compile.py` / `v_fused_qkv.py` and
   are now route targets inside `v_router.py`.
-
-## In progress
-
-_(none yet — claim something above)_
 
 ## Done
 
