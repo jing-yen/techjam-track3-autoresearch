@@ -133,10 +133,33 @@ avoid its measured asymmetric-kernel correctness drift.
   only, AFTER S8 is queued. *Falsify:* <20% win over reduce's 0.374 ms → stop,
   cite as "path identified" in the report. Full brief:
   `docs/research-kernel-frontier.md`.
-- **K2 — cuBLASLt fused GELU_BIAS epilogue for the FFN (T10 without writing a
-  GEMM).** Ampere exposes single-kernel bias+GELU fusions; torch-cublas-hgemm
-  wraps gelu(A@B^T+bias) directly. **GATE FIRST: verify cuBLASLt's GELU is
-  erf-exact, not tanh — tanh fails the correctness contract** (PROGRAM.md #1).
+  *Checked and deliberately NOT attempted:* Mirage / Mirage Persistent Kernel
+  (Wu et al., OSDI'25, github.com/mirage-project/mirage) — an automated kernel
+  superoptimizer, including a full "compile a model to one megakernel" mode.
+  Sounds like a shortcut for exactly K1; it isn't one for us. Real checked
+  blockers: requires rewriting the model in Mirage's own graph-building API
+  (no `nn.Module` import path), no prebuilt wheels (from-source build only,
+  real risk on our specific cluster CUDA/toolchain), and its only worked
+  examples are full-LLM scale (Qwen3-8B), nothing at our small/varied-shape
+  scale. Net effort (new API + from-source build + no precedent for our
+  workload) exceeds hand-writing K1 ourselves. Cite as future work in the
+  tech report; do not attempt integration in the time remaining.
+- **K2 — cuBLASLt fused GELU_BIAS epilogue for the FFN.** **Gate checked:
+  cuBLASLt's GELU_BIAS is confirmed tanh-approximate, not erf** — but this
+  does NOT disqualify it the way the original note assumed. We already
+  measured (iter 24, T7 tanh-GELU test) that plain tanh-GELU passes
+  correctness on all 13 shapes (max_abs 0.0003-0.0005, well under gate) — the
+  approximation itself is fine for this model. **New risk found instead:**
+  `torch-cublas-hgemm` (the wrapper the original note cited) does fp16
+  *accumulation*, not just fp16 compute with fp32 accumulation — a stronger
+  precision cut than anything shipped so far (T7/T6 both specifically keep
+  reductions in fp32). Also a small, unclear-maintenance package (79 stars).
+  **Superseded by T10** (`candidates/v_triton_fused_ffn.py`, written and
+  CPU-fallback-tested, GPU-pending): a self-built Triton GEMM+bias+erf-GELU
+  epilogue kernel achieves K2's actual goal (fuse Linear+GELU) while keeping
+  exact erf and fp32 accumulation throughout, no external dependency, no
+  precision question to resolve. Do the K2-via-external-library path only if
+  T10 underperforms and a second opinion is wanted — not the first move.
 - **K3 — split-K attention for #9 — BOUNDED, DO NOT BUILD.** Attention is 14%
   of #9; max whole-layer gain ~1.09x, under the noise floor. Logged as
   considered.
@@ -383,24 +406,26 @@ because three of the four are **not** the same problem:
   yet — that's the actual point of profiling before choosing the next
   kernel, not after.
 
-- **T10 — OPEN, the deliberately-deferred sibling of T7.** Fused FFN
-  epilogue (`Linear → GELU → Linear`). Explicitly considered during T7's
-  survey and passed over *for* AddNorm specifically because it's
-  higher-risk (a fused GEMM+epilogue Triton kernel has to actually beat
-  cuBLAS/Inductor's already-tuned matmul, not just save bandwidth like
-  AddNorm does) — not because it lacks headroom. Now that AddNorm has
-  landed, validated, and shown the whole "ship a correctness-gated Triton
-  kernel here" pattern works, this is the natural second kernel. Shape #8's
-  real ceiling is still ambiguous (`docs/research-batch2.md`: could be 57%
-  of the TF32 156 TFLOP/s ceiling or 29% of the fp16 312 TFLOP/s ceiling
-  depending on which op dominates under `autocast`'s mixed dtype policy) —
-  real, unresolved headroom either way, but **M2's profiling result should
-  settle whether FFN is actually the bottleneck before starting this**,
-  not just Roofline inference.
-  *Risk, stated plainly:* this needs real tile-size/pipeline-stage tuning
-  to have a chance of beating an already-tuned GEMM — budget for it to take
-  longer than T7 did, and for a first attempt to land at parity or worse
-  before tuning helps.
+- **T10 — WRITTEN, CPU-fallback-tested, GPU-UNTESTED (blocked on SSH being
+  down).** `candidates/v_triton_fused_ffn.py`: a Triton GEMM+bias+erf-GELU
+  epilogue kernel fusing `ffn_in`'s Linear+bias+GELU into one kernel launch
+  (follows Triton's own tutorial block-tiled-matmul pattern; `ffn_out`
+  stays a plain `nn.Linear` — nothing follows it before the residual add
+  worth fusing into this kernel). CPU-fallback path (plain PyTorch,
+  identical math, used when no CUDA): **13/13 correct, max_abs ~1e-6.**
+  Real Triton/GPU path is completely unverified — both correctness and
+  speed — since no CUDA was available while this was written. Block sizes
+  (`BLOCK_M=64, BLOCK_N=64, BLOCK_K=32`) are untuned tutorial defaults, same
+  caveat as T7 pre-T7b. Calibration from the literature (DeepFusionKernel,
+  arXiv Feb 2026, cited via a second independent research pass): comparable
+  fused-FFN work reports ~10% on A100 for a similar fusion — a reasonable
+  expectation to calibrate against, not a promise.
+  *Risk, stated plainly, unchanged from the original note:* this GEMM has
+  to actually beat cuBLAS/Inductor's already-tuned matmul, not just save
+  bandwidth like AddNorm did — a first attempt landing at parity or worse
+  before tuning helps is expected, not a sign the approach is wrong.
+  *Next step the moment GPU access returns:* `bench_harness.py` correctness
+  on shapes 1-13, no speed claims until that passes.
 
 - **T11 — OPEN, the actionable follow-through to L3 (which was
   explanatory-only).** L3 confirmed `torch.compile`'s max-autotune does
