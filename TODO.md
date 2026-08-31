@@ -153,6 +153,17 @@ because three of the four are **not** the same problem:
 
 ## Open — zero GPU cost, do these first
 
+- **D2 — THE VIDEO. Now the highest-risk item in the project, and S8 is its
+  footage.** A hard §3.5 requirement (public YouTube, linked in Devpost) with
+  zero work done and ~26 h left. A 3.72x with no video is an incomplete
+  submission; nothing else in this queue has that property. **Plan:** record
+  S8's confirmation sweep as the video centerpiece — the same GPU allocation
+  produces the error bar AND the footage, and the video then shows the actual
+  measurement behind the reported number instead of a staged demo. Script ready:
+  `docs/demo-video-script.md`. Devpost five-field draft ready:
+  `docs/devpost-draft.md`. **Freeze `v_router2` at T-12h; budget the last 4h for
+  record/upload/submit.** Full endgame table: `docs/research-queue-audit.md`.
+
 - **D1 — MOSTLY DONE.** `scripts/check_placeholders.sh` is down from 49 to
   **5 remaining `<FILL>`s, all in README.md's team-member-contributions
   table** (`README.md:283-287`) — real names/roles only the team can supply,
