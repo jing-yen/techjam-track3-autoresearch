@@ -123,6 +123,26 @@ after attention and after every block and after the final norm, output shape
 `[B,S,d]`, and baseline-compatible parameter names so
 `copy_model_weights(..., strict=True)` succeeds.
 
+**Why the optimization list above never includes pruning, quantization below
+fp16, distillation, or architecture simplification.** The efficient-transformer
+literature splits cleanly into two families. *Model efficiency* (structured
+pruning, block/layer dropping, distillation, low-bit (4/8-bit) quantization,
+architecture redesigns like removing skip connections or projections)
+produces a **different, cheaper model** — evaluated against task metrics
+(F1, perplexity) that tolerate the result no longer matching the original
+model's raw output tensors. *Kernel/systems efficiency* (fusion, dispatch,
+compilation, precision within tolerance, memory layout) computes the
+**same model faster** on the same hardware, with output unchanged up to
+floating-point rounding. The correctness gate here — every element within
+0.002 absolute or 2% relative of the fixed baseline's output — puts this
+task entirely in the second family by construction, not by choice: a pruned
+or distilled model's output diverges from the dense original by far more
+than that bound, so those techniques are inadmissible regardless of their
+reported speedups. (We separately measured bf16 autocast, one step milder
+than 4/8-bit quantization, and it already fails this gate on 13/13 shapes —
+see `TODO.md` T6.) Every optimization landed or attempted in this report is a
+kernel/systems-level technique for that reason.
+
 ---
 
 ## 5. Results
