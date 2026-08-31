@@ -347,6 +347,13 @@ class UserOptimizedTransformer(BaselineTransformer):
         n2b = stack(["norm2", "bias"])
 
         out = torch.empty_like(x2d)
+        # num_stages=1: default multi-stage pipelining roughly doubles SMEM
+        # for double-buffering; the first real GPU attempt needed 278528
+        # bytes against A100's 166912-byte limit (journal iter 35) -- a
+        # ~67% overshoot. This kernel's tl.dot calls are all single-shot
+        # (K=D=128 or K=HEAD_DIM=32, no multi-block K-loop to pipeline), so
+        # pipelining buys nothing here anyway; num_stages=1 removes the
+        # double-buffering overhead without changing what's computed.
         _megakernel_fwd[(1,)](
             x2d,
             qkv_w, qkv_b, out_w, out_b,
@@ -356,6 +363,7 @@ class UserOptimizedTransformer(BaselineTransformer):
             out,
             self.final_norm.eps,
             SEQ=_SEQ, D=_D, HEADS=_HEADS, HEAD_DIM=_HEAD_DIM, FFN=_FFN, LAYERS=L,
+            num_stages=1, num_warps=4,
         )
         return out.unsqueeze(0)
 
