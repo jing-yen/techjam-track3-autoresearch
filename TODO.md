@@ -414,24 +414,24 @@ because three of the four are **not** the same problem:
 - **T2, T3 — superseded.** Both landed as `v_compile.py` / `v_fused_qkv.py` and
   are now route targets inside `v_router.py`.
 
-- **M2 — OPEN, do this before adding more kernel candidates blind.** No
-  step in this project's actual measurement stack — not `bench_harness.py`,
-  not `autoresearch.workflow.js`'s strategist/coder/runner/postmortem loop
-  — has ever used `torch.profiler`, Nsight, or any per-op trace. Every
-  bottleneck claim so far (including this session's own Roofline estimates
-  for shape #8) is derived from `opt_ms` + a GFLOP count, never a measured
-  breakdown of where time inside one forward pass actually goes (norm vs
-  attention vs FFN vs launch/dispatch overhead vs mask construction).
-  `torch.profiler` ships with PyTorch, needs no install, and can export a
-  Chrome-trace or a table of per-op CUDA time with one `with
-  torch.profiler.profile(...):` block around a few warmed-up forward
-  calls. **Action:** profile `v_router2.py` (the eager `best`/`amp` routes,
-  where T7's Triton kernel now lives) on 2-3 representative shapes
-  (#1 small, #8 GEMM-heavy, #13 long-seq) and report the real top-3
-  time-consuming ops per shape. This either confirms the FFN/AddNorm
-  intuition behind T10 below, or surfaces something nobody has looked for
-  yet — that's the actual point of profiling before choosing the next
-  kernel, not after.
+- **M2 — DONE for shape #8; the first real profiler trace in this repo.**
+  (journal iter 36, `tools/profile_shape8.py`, job `778327`). Every
+  bottleneck claim before this (including this session's own Roofline
+  estimates) was inferred from `opt_ms` + a GFLOP count — never a measured
+  per-op/per-kernel CUDA trace. Real breakdown for shape #8's `amp` route:
+  **fp16 tensor-core GEMM 55.6%** (real, expected compute), **dtype
+  casting (fp32↔fp16 for autocast) 17.1%** (a genuinely new finding — real
+  overhead nobody had measured), Triton AddNorm 6.75%, unfused post-FFN
+  residual add 6.05%, flash attention 6.02%, unfused norm1 5.81%, GELU
+  1.92%. **This directly explains T10's shape-8 regression as more than
+  "needs tuning":** T10 forces full fp32 accumulation for correctness
+  safety; shape 8's real cost is 55.6% fp16-tensor-core + 17.1% casting —
+  T10 in fp32 gets neither the tensor-core speed nor any casting
+  reduction, so it's solving the wrong problem on this specific shape.
+  T10 (fp32) is a better structural fit for shapes that don't route to
+  `amp` (baseline already fp32 there, T10's bandwidth/launch savings are
+  real). **Still open:** profile #1 (small) and #13 (long-seq) too, for
+  the full 2-3-shape picture originally scoped.
 
 - **T10 — WRITTEN, CPU-fallback-tested, GPU-UNTESTED (blocked on SSH being
   down).** `candidates/v_triton_fused_ffn.py`: a Triton GEMM+bias+erf-GELU
