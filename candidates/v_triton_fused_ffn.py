@@ -91,7 +91,14 @@ if _HAS_TRITON:
             b_mask = (offs_k[:, None] + k0 < K) & (offs_n[None, :] < N)
             a = tl.load(a_ptrs, mask=a_mask, other=0.0)
             b = tl.load(b_ptrs, mask=b_mask, other=0.0)
-            acc = tl.dot(a, b, acc)
+            # input_precision="ieee" forces full fp32 accumulation. tl.dot's
+            # default is TF32 for fp32 inputs -- the exact bug class already
+            # found once this session in torch.compile's max-autotune (S1);
+            # found again here (T10, journal iter 33) because it wasn't set
+            # explicitly. Without this, max_abs sits uniformly at ~0.002-0.0024
+            # across nearly every shape (TF32's characteristic ~1e-3 relative
+            # error), failing 5/13 shapes outright.
+            acc = tl.dot(a, b, acc, input_precision="ieee")
             a_ptrs += BLOCK_K * stride_ak
             b_ptrs += BLOCK_K * stride_bk
 
