@@ -254,13 +254,41 @@ doesn't silently eat other people's GPU allocation the way it ate three of mine.
   (`docs/research-agent-findings.md`) independently confirms my K1
   falsification transfers to A100 generally (AutoMegaKernel 0.55-0.79x,
   Hopper-gated), so K1a's narrower small-shape bet is the only live
-  version of this idea. **CLAIMED (opus-1) — `candidates/v_triton_k1a_ffn.py`
-  written, CPU-fallback-tested (13/13 structural), GPU correctness+speed
-  test dispatched on shape #2.** Autotuned over BLOCK_M in {8,16,32,64,128}
-  (M=128 total rows for shape #2, B=1×S=128) — one Triton kernel per layer
-  fusing all 5 FFN-block ops (LayerNorm reduction, both GEMMs via
-  `input_precision="ieee"` per T10's fix, erf GELU, residual add). Timer
-  starts now against the pre-agreed kill criteria.
+  version of this idea. **CLOSED — kill criterion triggered decisively.**
+  `candidates/v_triton_k1a_ffn.py`: one Triton kernel per layer fusing all
+  5 FFN-block ops (LayerNorm reduction, both GEMMs via
+  `input_precision="ieee"` per T10's fix, erf GELU, residual add),
+  autotuned over BLOCK_M. Real path to this result was not clean: the
+  first GPU attempt (job 778735) crashed a real Triton internal-compiler
+  bug + 2 OOM-kills from a scoping mistake (single-tile design tested
+  against shape #8's d=1024, ~4MB weight tile per program — fixed with a
+  `_MAX_SINGLE_TILE_DIM=256` guard, see the postmortem still below this
+  entry). Rescoped retry (job 778916), **shape #2: opt_ms=1.420ms vs the
+  pre-agreed target of beating routed `reduce`'s 0.374ms by >20% (i.e.
+  needing <0.30ms) — 1.42ms is not close, ~4.7x over target, not a
+  marginal miss.** 10/10 correct on the rescoped shape family, standalone
+  median 1.84x / geomean 1.63x — real, but far below what compile/reduce
+  already deliver on these shapes (T15's leaderboard numbers: shape 2
+  alone is 6.97x routed). Kill criterion triggered unambiguously; not
+  pursuing K1b/K1c (both were contingent on K1a winning).
+  **K1a-persistent — ALSO CLOSED, worse than non-persistent K1a.** Same
+  kernel, `grid=(min(108,num_blocks),)` + grid-stride loop instead of one
+  program per row-block (targeting K1's 1-SM failure and T17's suspected
+  over-launch — see K1a-persistent's own entry below). **Result (job
+  778997): geomean 0.55x, several shapes actively SLOWER than baseline**
+  (shape 1: 0.27x, shape 5: 0.22x, shape 9: 0.25x) — worse than the
+  non-persistent version on every shape it was meant to help. Best-guess
+  mechanism: holding the full weight tile (W1, W2, LayerNorm weight/bias)
+  live in registers across the WHOLE grid-stride loop (not just one
+  iteration) increases per-thread register pressure for the kernel's
+  entire (longer) lifetime, likely reducing occupancy (fewer resident
+  warps per SM) enough to outweigh the launch-count/weight-reuse savings
+  — not verified via profiler, the magnitude of the loss made further
+  diagnosis not worth it. **Real lesson for future kernel work:** the
+  production "persistent kernel" pattern is not a free upgrade — it trades
+  launch overhead for register pressure, and that trade only pays off for
+  workloads compute-heavy enough to hide the occupancy cost, which these
+  small FFN blocks are not.
 
 - **K1 (original whole-model design) — CLOSED: real working kernel built,
   correctness proven, falsified on speed. Do not resume without a
@@ -467,42 +495,49 @@ because three of the four are **not** the same problem:
   call) is real and verified via source, but fixing it doesn't clearly pay
   off given the whole 17% wasn't weight-cast to begin with.
 
-- **T17 — CLOSED, real and large negative result, NOT integrated.**
+- **T17 — REOPENED, real bug found and fixed, retest dispatched.**
   `candidates/v_triton_addnorm_fused.py`: applied T7+T15's proven AddNorm
-  fusion (both boundaries) to the `fused` route, which had none. **Tested
-  standalone on GPU (job 778892), 13/13 correct**, but per-shape against
-  the current leaderboard's actual `fused`-routed numbers: **#9 2.233→1.558
-  (-30.2%), #10 2.470→1.732 (-29.9%), #12 2.467→1.715 (-30.5%)** — large,
-  unambiguous regressions, nowhere near the ±2.7% noise floor. Only #11
-  (16 heads) improved (+3.8%). **Do not integrate.** Root cause not fully
-  diagnosed (would need a real profiler trace to pin down, not done here
-  given the verdict is already clear either way) — best guess: the
-  `fused_add_layernorm` wrapper's unconditional `.reshape().contiguous()`
-  calls (copied verbatim from T7/T15, ×2 per call — once for residual,
-  once for delta) add real Python-dispatch + possible-copy overhead per
-  layer that plain PyTorch's `x = x + ffn_out(...)` didn't have, and for
-  shapes #9/#10/#12's specific eager-execution profile (no `torch.compile`
-  to amortize kernel-launch count the way `compile`/`reduce` do) that
-  overhead apparently costs MORE than the fusion saves — the opposite of
-  what happened on the `amp` route (T15), where the SAME kernel was a
-  clear win. **Lesson for future fusion attempts:** T7/T15's win on `amp`
-  doesn't generalize to every eager route by default; each route's actual
-  overhead profile needs checking (ideally profiled, not just assumed)
-  before porting a fusion that worked elsewhere.
+  fusion (both boundaries) to the `fused` route, which had none. First
+  standalone GPU test (job 778892) showed a large, unambiguous regression
+  vs the current leaderboard's `fused`-routed numbers: #9 -30.2%, #10
+  -29.9%, #12 -30.5%. **The "best guess" written here at the time
+  (`.contiguous()` overhead) was WRONG** — got real profiler data instead
+  of leaving a guess in the record (`tools/profile_t17_regression.py`, job
+  778957): T17's raw CUDA time on shape #9 was actually **LOWER** than the
+  current route (15.79ms vs 18.54ms) — the fusion itself works and is
+  genuinely faster. **The actual bug:** T17's `forward()` called
+  `bool(valid_token_mask.all())` directly instead of `v_router2.py`'s
+  `_effective_mask()` (B10's cached version) — a real per-forward
+  GPU→CPU sync, visible in the trace as `aten::all` /
+  `_local_scalar_dense` / `Memcpy DtoH` appearing ONLY in T17's profile,
+  not the baseline's. Exactly the bug class B10 was built to fix
+  elsewhere in this project (worth 2.92x→3.30x geomean when it landed) —
+  I just forgot to reuse that fix when writing a fresh candidate file.
+  Fixed (copied `_effective_mask` verbatim), CPU-fallback re-verified,
+  retest dispatched (job 779035). **Lesson:** always check a new
+  candidate reuses established sync-avoidance helpers, not just the
+  kernel/fusion logic being tested — an unrelated bug can fully mask a
+  real win.
 
-- **K1a-persistent — NEW, built, dispatched.** `candidates/v_triton_k1a_persistent.py`:
-  same fused FFN-block kernel as K1a, but launched as a persistent kernel
-  (`grid=(min(108, num_blocks),)` + a grid-stride loop over row-blocks,
-  the standard production pattern — Triton's own official persistent-matmul
-  tutorial, and what vLLM/SGLang's kernels do) instead of one program per
-  row-block. Directly targets two real, opposite failure modes THIS
-  project already measured: K1's original `grid=(1,)` (1 of 108 SMs used,
-  ~11x slower) and T17's likely `grid=(n_rows,)` over-launch (hundreds of
-  tiny single-row programs, -30% on shapes #9/#10/#12). Real, additional
-  benefit beyond occupancy: weight tiles load ONCE per program and get
-  reused across every row-block that program handles, not once per block.
-  Same correctness invariants and size guard as K1a. CPU-fallback tested.
-  GPU test dispatched on the same shape family as K1a's rescoped test.
+- **K1a-persistent — CLOSED, real negative result, worse than non-persistent
+  K1a.** `candidates/v_triton_k1a_persistent.py`: same fused FFN-block
+  kernel as K1a, launched as a persistent kernel (`grid=(min(108,
+  num_blocks),)` + grid-stride loop, the standard production pattern) to
+  target K1's `grid=(1,)` under-launch and T17's suspected `grid=(n_rows,)`
+  over-launch. **T17's actual regression turned out to be an unrelated bug
+  (missing mask-cache, see T17's entry above) — so the premise this was
+  built to fix (grid-granularity) was never actually confirmed as T17's
+  real cause.** Regardless, tested on its own merits (job 778997): **worse
+  than the non-persistent K1a on every shape, geomean 0.55x, several
+  shapes actively SLOWER than baseline** (shape 1: 0.27x, shape 5: 0.22x).
+  10/10 correct. Best-guess mechanism (not profiler-verified, the loss was
+  large enough not to warrant further diagnosis time): holding the weight
+  tile live in registers across the whole grid-stride loop raises register
+  pressure for the kernel's entire lifetime, likely hurting occupancy more
+  than the launch-count/weight-reuse savings help. **Lesson:** the
+  persistent-kernel pattern is a real production technique but not a free
+  upgrade — it trades launch overhead for register pressure, and these
+  small FFN blocks aren't compute-heavy enough to hide that cost.
 
 ## Open — the measurement that unblocks the rest
 
