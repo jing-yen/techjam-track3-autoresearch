@@ -64,7 +64,9 @@ Three things make it work:
 
 ## Setup and installation
 
-**Requirements:** Linux host with an NVIDIA GPU (we used an **NVIDIA A100-80 PCIe**),
+**Requirements:** Linux host with an NVIDIA GPU (results reported on an
+**NVIDIA A100-SXM4-80GB** via RunPod; earlier results on an **A100-80 PCIe**
+via the NUS SoC cluster are kept in `leaderboard.md` as historical record),
 Python 3.11+, a CUDA-enabled PyTorch. The dev laptops are Apple Silicon and can
 run only the CPU correctness tests.
 
