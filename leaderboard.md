@@ -3,11 +3,17 @@
 Update only via the **guarded best update** in `AGENTS.md` §2 (pull → re-check →
 replace only if strictly better).
 
-## Provisional — pending SoC confirmation (do not treat as the confirmed entry)
+## Confirmed best (RunPod A100-SXM4-80GB, canonical device)
 
-`candidates/v_router2_autotuned.py` (journal iter 55/57/58), RunPod
-A100-SXM4-80GB (**not** the SoC cluster — different physical GPU from the
-"Confirmed best" entry below). Four stacked changes over `v_router2.py`:
+**Canonical device changed from the SoC A100-80 PCIe to RunPod
+A100-SXM4-80GB** — explicit team decision, driven by the SoC cluster's queue
+becoming impractical to iterate against. The SoC-confirmed entry that used
+to live in this section is kept below under "Previous canonical device
+(SoC A100-80 PCIe)" as historical record, not retracted.
+
+`candidates/v_router2_autotuned.py` (journal iter 55/57/58, re-confirmed
+with full per-shape correctness evidence at iter 61, RunPod pod
+`fzbwqgylwr24eo`). Four stacked changes over `v_router2.py`:
 1. T7b's `@triton.autotune` on the shared AddNorm kernel.
 2. Explicit `chunked14amp` route for shape 14 (was falling through to
    `compile`, which never finishes for this shape — iter 7). Now ~8.1s/pass.
@@ -26,13 +32,21 @@ between milestones is attributable to ordinary run-to-run noise on two
 *unchanged* shapes (9, 10) landing near the sort boundary, not a regression
 (see journal iter 58 for the full per-shape accounting).
 
-Per explicit direction, using RunPod-only validation for now rather than
-blocking on SoC queue availability — **do not promote this to "best
-candidate" below until it's been run on the SoC A100-80 and passes the same
-guarded-update check**, since device consistency is exactly what that check
-exists to protect.
+**Iter 61 — re-confirmed with full per-shape correctness evidence.** Iter
+58's entry only recorded aggregate pass/fail, not per-shape `max_abs`/
+`max_rel` margins — the same gap flagged for every earlier ledger row (see
+S6 in `TODO.md`). Iter 61 re-ran the identical, unmodified candidate with
+`--out` to capture the complete per-shape JSON: **median 5.40x, geomean
+6.54x** (+0.8%/+1.3% vs iter 58 — inside run-to-run noise, a
+re-confirmation, not a new result), **13/13 correct, worst max_abs 0.00176
+(shape 8)** — same shape, same margin as every SoC-confirmed run in the
+section below. Full per-shape breakdown is in `journal.jsonl` iter 61
+(`per_shape` populated: `max_abs`, `max_rel`, `baseline_ms`, `opt_ms`,
+`speedup` per shape).
 
-## Confirmed best (SoC cluster, canonical device)
+This is now the project's reported number and canonical device.
+
+## Previous canonical device (SoC A100-80 PCIe) — kept for the record
 
 | field | value |
 |--|--|

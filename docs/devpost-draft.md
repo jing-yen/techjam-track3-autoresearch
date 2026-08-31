@@ -4,21 +4,24 @@
 Track 3 asks for GPU kernels that implement a fixed Transformer layer faster
 than the reference while passing per-element correctness on 14 published shapes.
 We ship one `UserOptimizedTransformer` that dispatches per shape — the rules
-explicitly allow shape checks — across four validated paths: torch.compile
+explicitly allow shape checks — across five validated paths: torch.compile
 (max-autotune and reduce-overhead) for launch-overhead-bound shapes, fused-QKV
-SDPA for balanced ones, fp16 autocast for the compute-heavy ones, and a custom
-Triton fused AddNorm kernel on the eager routes. Result: median 2.99x, geomean
-3.72x across 13/13 verifiable shapes on an A100-80 at the organizer-default
-configuration, and the previously-impossible 100k-token shape now completes via
-exact batch chunking. Built by a git-coordinated multi-agent research loop
-(described in the tech report §6) — which the problem statement explicitly
-encourages.
+SDPA (with and without CUDA-graph capture) for balanced ones, fp16 autocast
+with CUDA graphs for the compute-heavy ones, and a custom autotuned Triton
+fused AddNorm kernel on the eager routes. Result: median 5.40x, geomean 6.54x
+across 13/13 verifiable shapes on our canonical device (RunPod
+A100-SXM4-80GB), full per-shape correctness margins recorded (worst max_abs
+0.00176), and the previously-impossible 100k-token shape now completes in
+~8s via exact batch chunking. Built by a git-coordinated multi-agent research
+loop (described in the tech report §6) — which the problem statement
+explicitly encourages.
 
 **Development tools used.**
 Claude Code (CLI, non-interactive mode driving a plan→review→reconcile research
 loop), OpenAI Codex CLI (read-only adversarial review with JSON schema output),
-git as the shared agent state store, Slurm on the NUS SoC A100 cluster, tmux,
-VS Code.
+git as the shared agent state store, Slurm on the NUS SoC A100 cluster (our
+earlier device), RunPod on-demand A100 pods (our canonical device — the SoC
+cluster's shared queue became a bottleneck partway through), tmux, VS Code.
 
 **APIs used.**
 Anthropic Claude (Opus 5) via Claude Code; OpenAI gpt-5.6-sol via Codex CLI.

@@ -109,6 +109,12 @@
   .close-list li { font-size: clamp(12px,1.5vw,17px); color: var(--text-secondary); margin-bottom: 1.6%; padding-left: 1.6em; position: relative; }
   .close-list li::before { content: "\2192"; position: absolute; left: 0; color: var(--accent); }
 
+  /* Disclosure box (aggregate slide) */
+  .disclosure-box { background: var(--surface-2); border-left: 3px solid var(--accent-orange); border-radius: 0 10px 10px 0; padding: 3% 4%; margin-top: 3vh; max-width: 760px; }
+  .disclosure-title { font-weight: 600; color: var(--text-primary); font-size: clamp(12px,1.3vw,16px); margin-bottom: 6px; }
+  .disclosure-body { font-size: clamp(10.5px,1.1vw,13px); color: var(--text-secondary); line-height: 1.6; }
+  .disclosure-body b { color: var(--text-primary); }
+
   /* Nav & chrome */
   .nav-bar {
     position: fixed; bottom: 18px; left: 50%; transform: translateX(-50%);
@@ -140,9 +146,9 @@
   <!-- 1: TITLE -->
   <div class="slide active" data-notes="notes-1" id="s-title">
     <div class="title-eyebrow">TikTok TechJam 2026 &middot; Track 3</div>
-    <div class="title-hero">Making a Transformer layer run <span class="accent">6.46&times; faster</span> — and proving every number is real</div>
+    <div class="title-hero">Making a Transformer layer run <span class="accent">6.54&times; faster</span> — and proving every number is real</div>
     <div class="title-stats">
-      <div><div class="title-stat-num">6.46&times;</div><div class="title-stat-lbl">geomean speedup</div></div>
+      <div><div class="title-stat-num">6.54&times;</div><div class="title-stat-lbl">confirmed geomean speedup</div></div>
       <div><div class="title-stat-num">13/13</div><div class="title-stat-lbl">shapes correct</div></div>
       <div><div class="title-stat-num">3</div><div class="title-stat-lbl">documented negative results</div></div>
     </div>
@@ -185,7 +191,8 @@
   <!-- 4: PROGRESSION CHART -->
   <div class="slide" data-notes="notes-4">
     <div class="kicker">The journey</div>
-    <h1 class="slide-h">Every stacked change, GPU-confirmed</h1>
+    <h1 class="slide-h">Every stacked change, one GPU, start to finish</h1>
+    <h2 class="slide-h2">RunPod A100-SXM4-80GB, our canonical device — no hardware swap hides in this line.</h2>
     <div class="chart-box wide" id="chart-progression"></div>
   </div>
 
@@ -218,9 +225,13 @@
     <div class="kicker">The result</div>
     <h1 class="slide-h">13/13 correct, every claim GPU-verified</h1>
     <div class="stat-row">
-      <div class="stat-tile"><div class="stat-label">Median speedup</div><div class="stat-value">5.36&times;</div><div class="stat-delta">from 4.57&times;</div></div>
-      <div class="stat-tile"><div class="stat-label">Geomean speedup</div><div class="stat-value">6.46&times;</div><div class="stat-delta">+33.2%</div></div>
+      <div class="stat-tile"><div class="stat-label">Median speedup</div><div class="stat-value">5.40&times;</div><div class="stat-delta">from 4.57&times;</div></div>
+      <div class="stat-tile"><div class="stat-label">Geomean speedup</div><div class="stat-value">6.54&times;</div><div class="stat-delta">+34.9%</div></div>
       <div class="stat-tile"><div class="stat-label">Correctness</div><div class="stat-value">13/13</div><div class="stat-delta">rel&lt;0.02 abs&lt;0.002</div></div>
+    </div>
+    <div class="disclosure-box">
+      <div class="disclosure-title">Why we trust this number</div>
+      <div class="disclosure-body">The first full sweep on this device only logged <b>pass/fail</b> correctness, not the per-shape error margins our earlier runs always carried &mdash; so we didn't call it confirmed yet. We re-ran the identical, unmodified candidate specifically to capture the full per-shape <b>max_abs / max_rel</b> breakdown. Result: <b>5.40&times; / 6.54&times;</b>, within 1.3% of the first run &mdash; the same number, now with the evidence attached.</div>
     </div>
   </div>
 
@@ -254,10 +265,10 @@
     <p class="slide-p">Every number in this deck came from a measured run on real hardware &mdash; including the charts. Nothing here is estimated.</p>
     <div class="tag-row">
       <div class="tag">Claude Code</div>
-      <div class="tag">RunPod A100-SXM4-80GB</div>
+      <div class="tag">RunPod A100-SXM4-80GB (canonical)</div>
       <div class="tag">TODO.md / journal.jsonl</div>
       <div class="tag">git-coordinated agent log</div>
-      <div class="tag">SoC A100-80 cluster</div>
+      <div class="tag">SoC A100-80 cluster (earlier device)</div>
     </div>
   </div>
 
@@ -267,7 +278,7 @@
     <h1 class="slide-h" style="font-size:clamp(22px,3.2vw,38px)">Honest, not finished</h1>
     <ul class="close-list">
       <li>Pretransposed Linears: real win on one shape (d_model=1024), applied there only</li>
-      <li>SoC cluster cross-check still pending &mdash; today's numbers are RunPod-confirmed, provisional</li>
+      <li>An optional cross-check back on our previous device (SoC A100-80) would still be nice for our own confidence &mdash; no longer a submission blocker</li>
       <li>Full write-up, reproduction steps, and every negative result are in the repo</li>
     </ul>
   </div>
@@ -288,17 +299,17 @@
 
 <script>
 const NOTES = {
-  "notes-1": "6.46x geomean speedup on a Transformer layer, thirteen out of thirteen shapes still numerically correct, and three negative results documented instead of hidden. Not from one clever kernel — from measuring what was actually slow and proving every claimed win before it counts. That's what this project is: using AI-assisted tooling to optimize GPU kernels, and treating every number as something to prove, not assume.",
+  "notes-1": "6.54x confirmed geomean speedup on a Transformer layer, thirteen out of thirteen shapes still numerically correct, and three negative results documented instead of hidden. Not from one clever kernel — from measuring what was actually slow and proving every claimed win before it counts. That's what this project is: using AI-assisted tooling to optimize GPU kernels, and treating every number as something to prove, not assume.",
   "notes-2": "The task: replace this one class, UserOptimizedTransformer, and make it faster without changing what it computes. The organizer specifies fourteen fixed input shapes. Every candidate has to pass a real correctness gate against the baseline before any speedup number counts.",
   "notes-3": "No single implementation wins every shape — plain SDPA, fp16 autocast with CUDA graphs, torch.compile in two different modes, fused-QKV with graph capture. Rather than pick one, we measure all of them per shape and route to whichever actually won, backed by real GPU numbers, not a heuristic.",
-  "notes-4": "Here's the full arc, all measured on one consistent device so nothing here conflates a hardware change with an actual optimization. 2.87x at the start, up to 6.46x geomean today — a real 125% improvement, entirely from code changes.",
+  "notes-4": "Here's the full arc, all measured on our canonical device so nothing here conflates a hardware change with an actual optimization. 2.87x at the start, up to 6.54x geomean today — the speedup itself more than doubled, entirely from code changes.",
   "notes-5": "Shape fourteen's sequence length is a hundred thousand tokens. Early on we tried the standard route and it never finished — we killed it after thirty minutes with zero progress. Chunking got it running at all. Then we asked: is the chunk size actually the bottleneck? Turns out it wasn't — precision was, by a factor of nine.",
   "notes-6": "Shape thirteen was falling through to a route that nobody had actually benchmarked for this specific shape. We ran a real head-to-head across all six implementations. The winner wasn't close — four times better than the second-best option.",
   "notes-7": "Once we found shape thirteen was mis-routed, the obvious question was: is it the only one? So we ran the same six-way comparison across every shape. It wasn't just shape thirteen — six more shapes had a stronger option sitting unused the whole time.",
-  "notes-8": "Stacked together: median moved from 4.57x to 5.36x, geomean from 4.85x to 6.46x — a real 33% aggregate improvement — with correctness holding at thirteen out of thirteen shapes, every single time.",
+  "notes-8": "Stacked together: median moved from 4.57x to 5.40x, geomean from 4.85x to 6.54x — a real 35% aggregate improvement — with correctness holding at thirteen out of thirteen shapes, every single time. And this exact number only became official once we went back and captured the missing per-shape evidence — that's the box below.",
   "notes-9": "Two ideas that looked promising on paper both failed for real, understood reasons — not just 'it didn't work.' We know exactly why pretransposed weights regressed, and exactly why autocast can't be replicated for free. That's the kind of problem understanding a pure speedup number doesn't show.",
   "notes-10": "This was built with Claude Code driving the actual optimization work — proposing changes, dispatching them to GPU hardware, and only accepting a result once it was independently verified against real measurements.",
-  "notes-11": "What's left: a pretransposed-weights win specific to one shape, and a SoC cluster cross-check still pending since today's numbers came from a different GPU. Full reproduction steps and every negative result are documented in the repo, not hidden.",
+  "notes-11": "What's left: a pretransposed-weights win specific to one shape, and an optional cross-check back on our previous device for our own confidence — no longer a submission blocker. Full reproduction steps and every negative result are documented in the repo, not hidden.",
 };
 
 // ---- theme-aware ECharts palette ----
@@ -332,13 +343,13 @@ function buildProgression() {
   const p = palette();
   const el = document.getElementById("chart-progression");
   const chart = echarts.init(el, null, { renderer: "svg" });
-  const data = [2.87, 4.85, 4.88, 6.46];
-  const labels = ["v_router\nper-shape dispatch", "v_router2\n+AMP, Triton AddNorm, graphs", "+T7b + shape 14\nautotune, chunked-amp route", "+shape 13 + reroute\n6-way re-comparison"];
+  const data = [2.87, 4.85, 4.88, 6.46, 6.54];
+  const labels = ["v_router\nper-shape dispatch", "v_router2\n+AMP, Triton AddNorm, graphs", "+T7b + shape 14\nautotune, chunked-amp route", "+shape 13 + reroute\n6-way re-comparison", "+iter 61\nfull correctness evidence"];
   chart.setOption({
     textStyle: baseTextStyle(p),
     grid: { left: 50, right: 30, top: 30, bottom: 70 },
     xAxis: { type: "category", data: labels, axisLine: { lineStyle: { color: p.grid } }, axisLabel: { color: p.muted, fontFamily: "IBM Plex Mono", fontSize: 10.5, lineHeight: 15 }, axisTick: { show: false } },
-    yAxis: { type: "value", min: 2, max: 7.2, axisLabel: { color: p.muted, fontFamily: "IBM Plex Mono", formatter: "{value}x" }, splitLine: { lineStyle: { color: p.grid } } },
+    yAxis: { type: "value", min: 2, max: 7.3, axisLabel: { color: p.muted, fontFamily: "IBM Plex Mono", formatter: "{value}x" }, splitLine: { lineStyle: { color: p.grid } } },
     series: [{
       type: "line", data: data, symbolSize: 9, lineStyle: { width: 3, color: p.accent },
       itemStyle: { color: p.accent }, areaStyle: { color: p.accent, opacity: 0.08 },

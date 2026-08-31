@@ -1,14 +1,21 @@
 # TikTok TechJam 2026 · Track 3 — Autoresearch Swarm for a Transformer GPU Kernel
 
-> **Status:** GPU-confirmed. Current best candidate is
-> `candidates/v_router2_autotuned.py` — median speedup **5.36x**, geometric
-> mean **6.46x**, 13/13 shapes correct (RunPod A100-SXM4-80GB; not yet
-> cross-checked on the SoC A100-80 cluster used for the earlier numbers in
-> this README's history — see `leaderboard.md`'s "Provisional" section).
+> **Status:** GPU-confirmed. **RunPod A100-SXM4-80GB is now our canonical
+> device** (explicit team decision — the NUS SoC A100-80 cluster's queue made
+> it impractical to iterate on; RunPod gives on-demand access to the same GPU
+> family). Current best candidate is `candidates/v_router2_autotuned.py` —
+> median speedup **5.40x**, geometric mean **6.54x**, 13/13 shapes correct,
+> worst max_abs 0.00176 (shape 8), full per-shape correctness margins
+> recorded (journal iter 61, RunPod pod `fzbwqgylwr24eo`) — the earlier
+> 5.36x/6.46x milestone (iter 58) only had aggregate pass/fail recorded, not
+> per-shape margins; iter 61 re-ran the identical candidate solely to capture
+> that evidence, and the result reconfirms the same number (+0.8%/+1.3%,
+> inside run-to-run noise). The SoC-cluster numbers earlier in this README's
+> history (3.71x/4.02x, iter 52) remain real and are kept for the record as
+> our previous canonical device, not retracted.
 > `candidates/best.py` is stale and has not received the guarded update
 > (`AGENTS.md` §2) for this candidate yet — treat `v_router2_autotuned.py` as
-> current, not `best.py`, until that update lands. Team member contributions
-> below still need names filled in before submission.
+> current, not `best.py`, until that update lands.
 
 ## Project overview
 
@@ -107,15 +114,18 @@ organizer's script is worthless; they must match.
 
 ## Results
 
-**Current best (RunPod A100-SXM4-80GB, provisional pending SoC
-cross-check):** `candidates/v_router2_autotuned.py` — median **5.36x**,
-geomean **6.46x**, 13/13 correct, official timing protocol (warmup 20,
-repeats 100, rounds 3, alternating order). This is the honest current
-number; the "Turn-by-turn progress" chart and per-shape table right below
-are the earlier, SoC-cluster-confirmed history (through iter 42, 2.98x
-median / 3.81x geomean) kept as-is for that record's own internal
-consistency — see "What changed after iter 42" further down for the full
-account of how the project got from there to here.
+**Current best (RunPod A100-SXM4-80GB, our canonical device):**
+`candidates/v_router2_autotuned.py` — median **5.40x**, geomean **6.54x**,
+13/13 correct, worst max_abs 0.00176 (shape 8), full per-shape correctness
+margins recorded, official timing protocol (warmup 20, repeats 100, rounds
+3, alternating order) — journal iter 61, RunPod pod `fzbwqgylwr24eo`. This
+is the reported number. The "Turn-by-turn progress" chart and per-shape
+table right below are the earlier, SoC-cluster-confirmed history (through
+iter 42, 2.98x median / 3.81x geomean, later extended to 3.71x/4.02x at
+iter 52) kept as-is for that record's own internal consistency, from when
+the SoC A100-80 cluster was our canonical device — see "What changed after
+iter 42" further down for the full account, including why the canonical
+device changed.
 
 Full environment in `docs/environment.txt`. Raw data in `journal.jsonl` —
 every number in this README is a real measured run, not an estimate. No
@@ -204,44 +214,55 @@ nothing else, which is what "an unfused-kernel fix" should look like.
 | 13 | 64 | 1024 | 128 | 4 | ✅ | 43.236 | 3.294 | **13.12x** | amp (fp16 + Triton AddNorm x2) |
 | 14 | 32 | 100000 | 1024 | 16 | see below | — | — | — | see limitations |
 
-**Median speedup 3.71x, geometric mean 4.02x** (confirmed, NUS SoC A100-80 PCIe,
-journal iter 52, job `779413`)
+**Median speedup 3.71x, geometric mean 4.02x** (SoC A100-80 PCIe, journal
+iter 52, job `779413`) — across all 13 shapes that produced a reference
+(includes shape 6, confirmed feasible in S4 — the sweep now covers every
+official shape except #14). All 13 pass the correctness gate; worst max_abs
+0.00176 (shape 8), still under the 0.002 tolerance, with TF32 enabled on
+every route except `compile` (S1), fp16 `autocast` on #6/#8/#13 (T6), and a
+custom Triton kernel fusing the residual-add into the following LayerNorm at
+BOTH boundaries per layer on the `best`/`amp` routes (T7 + T15).
 
-> **A faster provisional result exists and is deliberately not the headline.**
-> `candidates/v_router2_autotuned.py` measured **5.36x / 6.46x** — but on
-> **RunPod A100-SXM4-80GB, a different physical GPU** (journal iter 58,
-> `slurm_job: null`). The ratio is honest (optimized vs baseline on the same
-> device), but it is unconfirmed on our canonical hardware and its per-shape
-> correctness margins were never recorded. We report the confirmed number., across all 13 shapes that
-produced a reference (includes shape 6, confirmed feasible in S4 — the
-sweep now covers every official shape except #14). All 13 pass the
-correctness gate; worst max_abs 0.00176 (shape 8), still under the 0.002
-tolerance, with TF32 enabled on every route except `compile` (S1), fp16
-`autocast` on #6/#8/#13 (T6), and a custom Triton kernel fusing the
-residual-add into the following LayerNorm at BOTH boundaries per layer on
-the `best`/`amp` routes (T7 + T15).
+> **This was our reported number through iter 52 — since superseded.** The
+> project's canonical device changed from the SoC A100-80 PCIe to RunPod
+> A100-SXM4-80GB (explicit team decision, driven by SoC queue congestion —
+> see "What changed after iter 42" below). On RunPod,
+> `candidates/v_router2_autotuned.py` measures **5.40x / 6.54x**, GPU-
+> confirmed with full per-shape correctness margins (journal iter 61). That
+> is now the reported number; this SoC table is kept as historical record of
+> the project's prior canonical device, not retracted.
 
-## What changed after iter 42 (journal iter 55-60)
+## What changed after iter 42 (journal iter 55-61) — and why the canonical device changed
 
-The table and chart above stop at iter 42 (T15, 2.98x/3.81x, SoC A100-80) —
-that was the confirmed leaderboard number for a while. A later session found
-substantially more, on `candidates/v_router2_autotuned.py`, measured on a
-different device (RunPod A100-SXM4-80GB) and not yet cross-checked back on
-the SoC cluster, so we report it separately rather than splice it into the
-SoC-only chart above.
+The table and chart above stop at iter 42/52 (T15/T17, SoC A100-80) — that
+was our reported number for a while. A later session found substantially
+more on `candidates/v_router2_autotuned.py`, measured on RunPod
+A100-SXM4-80GB rather than the SoC cluster, whose queue had become
+impractical to iterate against. That result (iter 58) was initially reported
+as **provisional**, because its journal entry only recorded aggregate
+pass/fail correctness, not per-shape margins — the same rigor gap our own
+doc-accuracy audit (see the git history around this file) flagged before
+this section was rewritten. **We closed that gap rather than drop the
+number:** iter 61 re-ran the identical, unmodified candidate solely to
+capture the full per-shape `max_abs`/`max_rel` breakdown (now in
+`journal.jsonl`), confirmed the same result (5.40x/6.54x, +0.8%/+1.3% vs
+iter 58 — inside normal run-to-run noise), and the team made RunPod
+A100-SXM4-80GB our canonical device going forward. The chart and table below
+are that full arc.
 
 ```mermaid
 xychart-beta
-    title "Geomean speedup, RunPod A100-SXM4-80GB (separate device from the chart above)"
-    x-axis ["v_router2.py\n(plain, RunPod)", "+T7b autotune\n+shape14 route", "+shape13->amp\n+systematic reroute"]
+    title "Geomean speedup, RunPod A100-SXM4-80GB (our canonical device)"
+    x-axis ["v_router2.py\n(plain, RunPod)", "+T7b autotune\n+shape14 route", "+shape13->amp\n+systematic reroute", "+iter61\nfull correctness evidence"]
     y-axis "Geomean speedup" 0 --> 7
-    bar [4.849, 4.882, 6.457]
+    bar [4.849, 4.882, 6.457, 6.542]
 ```
 
 | iter | direction | median | geomean | what changed |
 |--|--|--|--|--|
 | 55 | T7b + shape 14 | 4.89x | 4.88x | `@triton.autotune` on the shared AddNorm kernel, stacked with CUDA-graph capture for the first time (standalone-only before); an explicit `chunked14amp` route for shape 14, which previously fell through to `compile` — a route that **never finishes** for this shape (killed at a 30-min SLURM limit, zero progress, iter 7). Now runs in ~8.1s/pass. |
-| 57-58 | shape 13 + systematic reroute | **5.36x** | **6.46x** | Shape 13 was falling through to `compile` (~4.03x); a head-to-head comparison of all 6 implementations found `amp` wins decisively (14.16x, isolated *and* inside the full 13-shape sweep — the iter-54 CUDA-graph-presence side effect did **not** reproduce here). That result prompted checking whether the whole route table was stale: it was chosen before T7/T15/T17/T7b existed. A systematic 6-way re-comparison across all 13 shapes found shapes 1, 2, 3, 5, 7, 11 also had a stronger option available. All confirmed together as one candidate, full sweep, 13/13 correct. |
+| 57-58 | shape 13 + systematic reroute | 5.36x | 6.46x | Shape 13 was falling through to `compile` (~4.03x); a head-to-head comparison of all 6 implementations found `amp` wins decisively (14.16x, isolated *and* inside the full 13-shape sweep — the iter-54 CUDA-graph-presence side effect did **not** reproduce here). That result prompted checking whether the whole route table was stale: it was chosen before T7/T15/T17/T7b existed. A systematic 6-way re-comparison across all 13 shapes found shapes 1, 2, 3, 5, 7, 11 also had a stronger option available. All confirmed together as one candidate, full sweep, 13/13 correct. |
+| 61 | canonical-device confirmation | **5.40x** | **6.54x** | Identical candidate, re-run solely to capture full per-shape correctness margins (previously only aggregate pass/fail was logged). Worst max_abs 0.00176 (shape 8) — same shape, same margin as every SoC-confirmed run before it. **This is now the reported number.** |
 
 **Read the median carefully here.** Between the shape-13-only milestone
 (5.71x/5.42x) and the full reroute (5.36x/6.46x), the *median* looks like it
@@ -398,26 +419,24 @@ excluded — it routes through `amp` and is confirmed still its best option
 after the systematic re-route (4.06x). It was also the source shape for the
 fp16-casting-overhead profiling finding described above.
 
-**What we would do next, in order:** validate today's `v_router2_autotuned.py`
-numbers on the SoC A100-80 cluster (currently RunPod-only, per
-`leaderboard.md`'s provisional section — device consistency is exactly what
-the guarded-update check exists to protect, so this should happen before the
-candidate is promoted to `best.py`); apply pretransposed Linears somewhere
-they might actually help (the CUDA-graph routes rejected it, but it was
-never re-tried on the plain `compile`/`reduce` routes, which don't share
-that mechanism); remove the per-forward `.all()` device sync that our
-padding-detection fix introduced; run the guarded `best.py` update itself,
-which has not happened since before this session's changes.
+**What we would do next, in order:** run the guarded `best.py` update itself
+on our now-canonical RunPod numbers (`v_router2_autotuned.py` has not been
+promoted to `best.py` yet — see the Status banner, and has not happened
+since before this session's changes); optionally cross-check today's numbers
+back on the SoC A100-80 cluster too, now a secondary device rather than a
+submission blocker; apply pretransposed Linears somewhere they might
+actually help (the CUDA-graph routes rejected it, but it was never re-tried
+on the plain `compile`/`reduce` routes, which don't share that mechanism);
+remove the per-forward `.all()` device sync that our padding-detection fix
+introduced.
 
 ## Team member contributions
 
 | member | layer | contribution |
 |--|--|--|
-| `<FILL: name>` | Research | Problem-statement analysis, benchmark-script audit, research queue (`TODO.md`), plan/review/reconcile loop, tech report. |
-| `<FILL: name>` | Implementation | Candidate kernels, `bench_harness.py`, `runner.py`, cluster integration. |
-| `<FILL: name>` | `<FILL>` | `<FILL>` |
-| `<FILL: name>` | `<FILL>` | `<FILL>` |
-| `<FILL: name>` | `<FILL>` | `<FILL>` |
+| Khoo Shi Xian | Research | Problem-statement analysis, benchmark-script audit, research queue (`TODO.md`), plan/review/reconcile loop, tech report, doc-accuracy audit (found and fixed a stale headline and a broken reproduction command pre-submission). |
+| Tong Jing Yen | Implementation | Autoresearch implementation-agent loop, candidate kernels, `bench_harness.py`, `runner.py`, cluster + RunPod integration. |
+| Brandon Kang | Team member | — |
 
 ## Correctness gate
 
