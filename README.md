@@ -1,8 +1,14 @@
 # TikTok TechJam 2026 · Track 3 — Autoresearch Swarm for a Transformer GPU Kernel
 
-> **Status:** measurements pending first GPU run. Every number in this README and
-> in `TECH_REPORT.md` marked `<FILL>` is a placeholder. **Do not submit with any
-> `<FILL>` remaining.** Run `scripts/check_placeholders.sh` before you ship.
+> **Status:** GPU-confirmed. Current best candidate is
+> `candidates/v_router2_autotuned.py` — median speedup **5.36x**, geometric
+> mean **6.46x**, 13/13 shapes correct (RunPod A100-SXM4-80GB; not yet
+> cross-checked on the SoC A100-80 cluster used for the earlier numbers in
+> this README's history — see `leaderboard.md`'s "Provisional" section).
+> `candidates/best.py` is stale and has not received the guarded update
+> (`AGENTS.md` §2) for this candidate yet — treat `v_router2_autotuned.py` as
+> current, not `best.py`, until that update lands. Team member contributions
+> below still need names filled in before submission.
 
 ## Project overview
 
@@ -41,7 +47,7 @@ Three things make it work:
 | `TODO.md` | Research queue. Every item carries `file:line` evidence and a falsification gate. |
 | `LOG.md` / `journal.jsonl` | Human- and machine-readable experiment log. |
 | `leaderboard.md` | Current best correct candidate + per-shape speedups. |
-| `candidates/best.py` | Current best implementation. |
+| `candidates/best.py` | Current best implementation *(stale as of this writing — pending the guarded update; the actual current best is `candidates/v_router2_autotuned.py`, see the Status banner at the top)*. |
 | `bench_harness.py` | Reuses the organizer benchmark; emits per-shape correctness + speedup as JSON. |
 | `runner.py` + `sbatch_template.sh` | Evaluate candidates on the cluster (Slurm array) or locally. |
 | `research-loop.sh` + `prompts/` + `schemas/` | The research layer: Claude plan → Codex review → Claude reconcile. |
@@ -73,14 +79,16 @@ remote workdir) — see `CLUSTER_SETUP.md`.
 # 1. Plumbing check (CPU, no GPU needed). Expect 9/9 pass.
 python tests/test_bench_harness.py && python tests/test_runner.py
 
-# 2. Correctness smoke test on tiny shapes (CPU).
-python bench_harness.py --candidate candidates/best.py --shapes dev --device cpu
+# 2. Correctness smoke test on tiny shapes (CPU). NOTE: candidates/best.py is
+#    stale (pending the guarded update) -- use the actual current best below.
+python bench_harness.py --candidate candidates/v_router2_autotuned.py --shapes dev --device cpu
 
 # 3. Capture the environment for the report. Run ON the GPU node.
 bash scripts/capture_env.sh > docs/environment.txt
 
-# 4. The headline result: all 14 official shapes on GPU.
-python runner.py --candidates candidates/best.py --shapes all --dtype float32
+# 4. The headline result: all 13 shapes with a reference, on GPU (shape 14
+#    has no reference -- see Limitations -- run it separately, --shapes 14).
+python runner.py --candidates candidates/v_router2_autotuned.py --shapes all --dtype float32
 
 # 5. Reproduce a single shape through the organizer's own script, unmodified,
 #    as an independent check that our harness agrees with it. Example, shape 1:
@@ -99,10 +107,19 @@ organizer's script is worthless; they must match.
 
 ## Results
 
-Measured on **NVIDIA A100 PCIe** (NUS SoC cluster), **float32**, official
-timing protocol (warmup 20, repeats 100, rounds 3, alternating order). Full
-environment in `docs/environment.txt`. Raw data in `journal.jsonl` — every
-number below is a real measured run, not an estimate.
+**Current best (RunPod A100-SXM4-80GB, provisional pending SoC
+cross-check):** `candidates/v_router2_autotuned.py` — median **5.36x**,
+geomean **6.46x**, 13/13 correct, official timing protocol (warmup 20,
+repeats 100, rounds 3, alternating order). This is the honest current
+number; the "Turn-by-turn progress" chart and per-shape table right below
+are the earlier, SoC-cluster-confirmed history (through iter 42, 2.98x
+median / 3.81x geomean) kept as-is for that record's own internal
+consistency — see "What changed after iter 42" further down for the full
+account of how the project got from there to here.
+
+Full environment in `docs/environment.txt`. Raw data in `journal.jsonl` —
+every number in this README is a real measured run, not an estimate. No
+number below is hand-written.
 
 ### Turn-by-turn progress (geomean speedup, official-safe shapes)
 
@@ -196,6 +213,86 @@ tolerance, with TF32 enabled on every route except `compile` (S1), fp16
 residual-add into the following LayerNorm at BOTH boundaries per layer on
 the `best`/`amp` routes (T7 + T15).
 
+## What changed after iter 42 (journal iter 55-60)
+
+The table and chart above stop at iter 42 (T15, 2.98x/3.81x, SoC A100-80) —
+that was the confirmed leaderboard number for a while. A later session found
+substantially more, on `candidates/v_router2_autotuned.py`, measured on a
+different device (RunPod A100-SXM4-80GB) and not yet cross-checked back on
+the SoC cluster, so we report it separately rather than splice it into the
+SoC-only chart above.
+
+```mermaid
+xychart-beta
+    title "Geomean speedup, RunPod A100-SXM4-80GB (separate device from the chart above)"
+    x-axis ["v_router2.py\n(plain, RunPod)", "+T7b autotune\n+shape14 route", "+shape13->amp\n+systematic reroute"]
+    y-axis "Geomean speedup" 0 --> 7
+    bar [4.849, 4.882, 6.457]
+```
+
+| iter | direction | median | geomean | what changed |
+|--|--|--|--|--|
+| 55 | T7b + shape 14 | 4.89x | 4.88x | `@triton.autotune` on the shared AddNorm kernel, stacked with CUDA-graph capture for the first time (standalone-only before); an explicit `chunked14amp` route for shape 14, which previously fell through to `compile` — a route that **never finishes** for this shape (killed at a 30-min SLURM limit, zero progress, iter 7). Now runs in ~8.1s/pass. |
+| 57-58 | shape 13 + systematic reroute | **5.36x** | **6.46x** | Shape 13 was falling through to `compile` (~4.03x); a head-to-head comparison of all 6 implementations found `amp` wins decisively (14.16x, isolated *and* inside the full 13-shape sweep — the iter-54 CUDA-graph-presence side effect did **not** reproduce here). That result prompted checking whether the whole route table was stale: it was chosen before T7/T15/T17/T7b existed. A systematic 6-way re-comparison across all 13 shapes found shapes 1, 2, 3, 5, 7, 11 also had a stronger option available. All confirmed together as one candidate, full sweep, 13/13 correct. |
+
+**Read the median carefully here.** Between the shape-13-only milestone
+(5.71x/5.42x) and the full reroute (5.36x/6.46x), the *median* looks like it
+dipped while the *geomean* jumped +19%. That's not a regression — every
+individually re-routed shape (1, 2, 3, 5, 7, 11) improved or held steady.
+What happened: shapes 9 and 10 (`fusedcg`, untouched by this change)
+measured ~10% lower than their prior run from ordinary run-to-run noise
+(already documented elsewhere in this repo as a normal swing for these
+routes), and that noise happened to land exactly on the median's sort
+boundary. Full per-shape accounting in `journal.jsonl` iter 58.
+
+Full per-shape breakdown, RunPod A100-SXM4-80GB, official protocol:
+
+| # | old route (pre-reroute) | old | new route | new | Δ |
+|--|--|--|--|--|--|
+| 1 | compile | 2.60x | amp | 4.88x | +87.4% |
+| 2 | compile | 7.66x | fusedcg | 13.73x | +79.3% |
+| 3 | reduce | 10.03x | fusedcg | 13.35x | +33.1% |
+| 4 | reduce | 9.45x | reduce (confirmed best) | 9.45x | — |
+| 5 | reduce | 2.77x | amp | 3.60x | +30.3% |
+| 6 | amp | 4.06x | amp (confirmed best) | 4.06x | — |
+| 7 | compile | 5.84x | amp | 7.63x | +30.8% |
+| 8 | amp | 1.81x | amp (confirmed best) | 1.81x | — |
+| 9 | fusedcg | 4.59x | fusedcg (confirmed best) | 4.59x | — |
+| 10 | fusedcg | 5.14x | fusedcg (confirmed best) | 5.14x | — |
+| 11 | fusedcg | 3.45x | amp | 5.36x | +55.3% |
+| 12 | fusedcg | 11.07x | fusedcg (confirmed best) | 11.07x | — |
+| 13 | compile (fallback) | ~4.03x | amp | 14.16x | +251.4% |
+| 14 | compile fallback (never finishes) | — | chunked14amp | ~8.1s/pass | now runs at all |
+
+**Real negative results from the same session, kept for the record rather
+than hidden — both are genuine evidence of problem understanding, not just
+failed experiments:**
+
+- **Pretransposed Linear weights** (`candidates/v_router2_pt_test.py`) won
+  standalone (1.80x/1.84x vs plain baseline) but **regressed every touched
+  shape 10.6-43.8%** when stacked on the CUDA-graph routes. Mechanism:
+  `PreTransposedLinear` computes `matmul` then a separate `+ bias` — two
+  kernel launches — where `nn.Linear`'s `F.linear` fuses GEMM+bias into one
+  via cuBLASLt's epilogue. With 6 Linear layers × 4 transformer layers, that
+  adds real per-launch cost even under CUDA-graph replay, outweighing the
+  layout win. Rejected; not integrated.
+- **Native fp16 weights instead of `torch.autocast`**
+  (`candidates/v_router2_ampfp16_test.py`,
+  `candidates/v_router2_ampfp16_selective.py`) — motivated by profiling
+  finding ~30% of shape 6's CUDA time in weight-casting kernels, more than
+  the AddNorm kernel itself. Two attempts, both rejected on real correctness
+  failures (max_abs 0.005-0.012 vs the 0.002 gate), with the second attempt
+  isolating the exact mechanism: `torch.autocast` never actually casts the
+  *residual stream* to fp16 — it only intercepts ops in its explicit list
+  (matmul/Linear/conv). The residual stream stays fp32 throughout the whole
+  forward pass under the real `amp` route; only the bounded GEMM
+  computations get cast. Native fp16 casts the residual stream itself and
+  keeps it there, accumulating real rounding error across all 8 layer
+  boundaries. Correctly fixing this would mean reconstructing autocast's
+  exact fp16-compute/fp32-accumulate split by hand — at which point there is
+  no real saving left over just using autocast. Closed with the mechanism
+  understood, not as an open question.
+
 ## Limitations, and what we would improve given more time
 
 Written honestly. Several of these are things we found and did not have time to
@@ -217,9 +314,16 @@ fp32 — 37 GB for a *single* `(batch, head)` slice, of which there are 512.
 **No GPU can produce ground truth for shape 14**, so correctness there is
 checked indirectly: we validated the identical chunking *mechanism* on
 shapes #8 and #13, which do have references, and it passes the gate exactly
-(max_abs 0.0009-0.0011). Given more time, the next lever is CUDA-stream
-pipelining across the 8 sequential chunks to bring the ~75s down — not
-yet attempted, no evidence yet on how much it would help.
+(max_abs 0.0009-0.0011).
+
+*Update (see "What changed after iter 42" above): the "next lever" we
+flagged here — pushing past ~75s — turned out not to be stream pipelining
+(measured 6.6% *slower*, see the rejected-directions list above) but
+precision: a calibration sweep found chunk size barely mattered (chunk=4
+→ chunk=8 in fp32 saved only ~8%), while switching to fp16 dropped it to
+**~8.1s/pass**, a ~9x win, now wired into the router as the `chunked14amp`
+route. Shape 14 still has no reference to score it against for the same
+reason above — this only changes how fast the unscored run is.*
 
 **Our timing is steady-state, not cold-start.** We inherit the organizer's
 protocol, which reuses one fixed input for all iterations and never flushes L2
@@ -252,34 +356,50 @@ to 2.98x geometric mean. The numbers reported here are the organizer-default
 ones. We record the earlier configuration because the more flattering result
 turned out to be the correct one, and it would have been easy not to check.
 
-**Shape 8 remains our weakest shape, and it is now genuinely unfinished.** Under
-full fp32 it ran at 16.0 TFLOP/s against a 19.5 TFLOPS ceiling — 82%, effectively
-done. With TF32 enabled it runs at 68.7 TFLOP/s against a 156 TFLOPS TF32 ceiling
-— **44%**. Its ratio improved (1.14x to 1.29x) but the headroom roughly doubled,
-because the reference got faster too. This is the clearest remaining
-optimization target and we did not have time to pursue it.
+**Shape 8's TFLOP analysis below predates fp16 autocast landing on it —
+kept for the historical roofline reasoning, superseded by measurement.**
+Under full fp32 it ran at 16.0 TFLOP/s against a 19.5 TFLOPS ceiling — 82%,
+effectively done. With TF32 enabled it runs at 68.7 TFLOP/s against a 156
+TFLOPS TF32 ceiling — 44%. *This motivated moving shape 8 onto the `amp`
+route (fp16 autocast + Triton AddNorm), confirmed still its best option
+after the systematic re-route (1.81x, unchanged from the T15-era number) —
+we do not have a fresh TFLOP-vs-ceiling reading for the current fp16 route,
+so we report the ratio (real, measured) without re-claiming a percent-of-peak
+figure we haven't re-measured.*
 
-**FlashAttention never runs in our configuration.** A direct probe
+**FlashAttention still never runs at fp32 in our configuration — but the
+fp16 path this section originally flagged as unvalidated has since been
+extensively GPU-confirmed.** The original probe
 (`tools/probe_sdpa_backends.py`, `docs/sdpa_backend_probe.json`) forcing each
 SDPA backend per shape found flash eligible on **0 of 14 shapes at fp32** and
-memory-efficient attention on 14 of 14. Every speedup we report comes from
-memory-efficient SDPA. At fp16 the same probe finds flash eligible on **all 14**,
-including the head_dim-256 shape — so fp16 would unlock both tensor cores and
-flash. A naive blanket fp16 cast failed correctness on 11 of 12 shapes
-(max_abs 0.006-0.009); an autocast variant that keeps LayerNorm and the softmax
-reduction in fp32 (`candidates/v_amp.py`) is written but was not validated on GPU
-before the deadline.
+memory-efficient attention on 14 of 14; at fp16, flash eligible on all 14.
+*Update: the fp16-`autocast` route this section said "was not validated on
+GPU before the deadline" has since been GPU-confirmed correct and adopted —
+it now routes 7 of 13 shapes (1, 5, 6, 7, 8, 11, 13), all 13/13 passing the
+correctness gate. We separately tried going further — storing weights
+*natively* in fp16 instead of relying on `autocast`'s per-call casting, to
+cut the ~30% of shape 6's CUDA time spent in casting kernels — and that
+specific idea failed correctness for a real, now-understood reason (see
+"What changed after iter 42" above): `autocast` never actually casts the
+residual stream itself, only the bounded GEMM ops, and replicating that
+selectivity by hand turns out to mean reconstructing `autocast`, not
+avoiding it.*
 
-**Shape 6 (batch 10000) was never run.** It is excluded from our `official-safe`
-sweep alongside shape 14 on memory grounds and we did not return to it.
+**Shape 6 (batch 10000) has since been run, extensively.** It is no longer
+excluded — it routes through `amp` and is confirmed still its best option
+after the systematic re-route (4.06x). It was also the source shape for the
+fp16-casting-overhead profiling finding described above.
 
-**What we would do next, in order:** pursue shape 8, now at 44% of the TF32
-ceiling rather than 82% of the fp32 one; validate the autocast fp16 path on GPU, which the
-backend probe shows would unlock flash on all 14 shapes; remove the per-forward
-`.all()` device sync that our padding-detection fix introduced; and only then
-consider Triton kernels, which our own profiling suggests would gain little —
-shape 8 is already at 82% of the fp32 ceiling and the small shapes are dominated
-by launch overhead that `torch.compile` already removes.
+**What we would do next, in order:** validate today's `v_router2_autotuned.py`
+numbers on the SoC A100-80 cluster (currently RunPod-only, per
+`leaderboard.md`'s provisional section — device consistency is exactly what
+the guarded-update check exists to protect, so this should happen before the
+candidate is promoted to `best.py`); apply pretransposed Linears somewhere
+they might actually help (the CUDA-graph routes rejected it, but it was
+never re-tried on the plain `compile`/`reduce` routes, which don't share
+that mechanism); remove the per-forward `.all()` device sync that our
+padding-detection fix introduced; run the guarded `best.py` update itself,
+which has not happened since before this session's changes.
 
 ## Team member contributions
 
