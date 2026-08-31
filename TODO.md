@@ -121,6 +121,54 @@ avoid its measured asymmetric-kernel correctness drift.
   Full analysis incl. why sparse/linear attention is disqualified:
   `docs/research-shape14.md`.
 
+## K4 — CLOSED: real mechanism found, but it lands in warmup, not the timed
+loop, so it does NOT explain S2 (which remains genuinely open)
+
+(job `778517`, `tools/check_k4_cudagraphs.py`, `torch._logging.set_logs
+(cudagraphs=True, recompiles=True)` — PyTorch's own internal diagnostic, not
+inferred). Ran the compile/reduce-routed shapes (1,2,3,4,5,7) both isolated
+(own process each) and back-to-back in one process (mirrors a real sweep).
+
+**Confirmed real, with a precise mechanism (not the one K4 originally
+guessed):** isolated runs show **zero** recompiles or allocator checkpoints;
+the one-process run shows **4 Dynamo recompiles and 5 CUDA-caching-allocator
+checkpoint/restores** for just 6 shapes. Root cause, traced to source:
+`_CompileTransformerBase._forward_impl` (`v_router2.py:337`) is one shared
+class method, `torch.compile`d fresh per model instance — Dynamo's guard
+cache is keyed on that *shared* code object, not per-instance. `v_router2`
+also deliberately toggles `torch.backends.cuda.matmul.allow_tf32` per
+route (`v_router2.py:520-535`, the S1 fix: `False`/"highest" for `compile`,
+`True`/"high" for everything else, both ways every time — intentional,
+already documented, not a bug). Since that's a Dynamo-tracked global-state
+guard, every transition into or out of a `compile`-routed shape invalidates
+prior cache entries and forces a fresh compile — confirmed directly in the
+log: shape 3's first call was recompiled specifically because "GLOBAL_STATE
+changed: allow_tf32" against both of shapes 1 and 2's cached entries.
+
+**Why this does NOT explain S2:** `bench_harness.py`/`torch_transformer_
+benchmark.py` (`warmup_model`, called once per shape *before* that shape's
+own `benchmark_once`) runs all compilation and any guard-miss recompilation
+inside the untimed warmup loop, synchronized before the timed CUDA-event
+loop starts. Structurally, that means this cost inflates a full sweep's
+*total wall-clock time* (more to compile, more allocator checkpoint/restore
+churn) but cannot leak into the *per-shape CUDA-event speedup numbers* that
+actually populate the leaderboard — those are measured strictly after
+warmup completes, on a model whose guards already match. **K1's original
+premise (non-static parameter addresses causing a hidden per-call D2D copy
+tax) was not observed at all** — no skip/alias/copy warnings anywhere in
+the log, cudagraph capture succeeded cleanly every time.
+**S2 remains unexplained.** The one-process run does show accumulating
+allocator-checkpoint state (5 checkpoints across 6 shapes) that *could*
+plausibly slow down cudagraph pool allocation/replay for shapes appearing
+*later* in a 13-shape sweep (S2's #9/#10 come after 8 other shapes'
+compile/reduce/amp instances have already accumulated pool state) — but
+this run didn't measure actual per-call latency, only log events, so that's
+a hypothesis for whoever picks it up next, not a finding. Real next step if
+anyone wants it: rerun S2's #9/#10 pairwise test with #1-#8 run first in the
+same process (reproducing full pool-accumulation) vs a fresh process, and
+diff the CUDA-event timings directly — that would either confirm or rule
+out pool accumulation as S2's actual cause.
+
 ## Cluster notice — node `xgpj0` (a100-80) has a broken CUDA/torch env, exclude it
 
 Discovered while dispatching K4 (2026-08-31, ~this entry's timestamp). Any job
