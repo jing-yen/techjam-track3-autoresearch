@@ -292,16 +292,88 @@ class _BestTransformer(BaselineTransformer):
 
 
 # --------------------------------------------------------------------------- #
+# T15: extends T7's fused AddNorm to the SECOND residual+norm boundary
+# (ffn_out-add -> next layer's norm1, or -> final_norm for the last layer).
+# M2 (tools/profile_shapes.py, shape #13) found this boundary unfused at
+# 19.21% of CUDA time -- bigger than T7's own already-fused kernel sitting
+# right next to it (9.57%). Standalone validation: candidates/v_triton_addnorm2.py
+# (13/13 correct on official shapes AND at --padding-ratio 0.3). Reuses T7's
+# exact kernel unmodified; only the block/transformer wiring changes -- see
+# that file's docstring for the full padding-safety argument (mirrors T7's
+# own already-validated no-intermediate-masking approach).
+# --------------------------------------------------------------------------- #
+class _BestBlockTriton2(nn.Module):
+    """Like _BestBlockTriton, but returns (post_ffn_residual, ffn_delta)
+    UNCOMBINED -- the caller fuses their add with the NEXT norm."""
+
+    def __init__(self, d_model, num_heads, ffn_dim):
+        super().__init__()
+        self.norm1 = nn.LayerNorm(d_model)
+        self.attention = _BestAttention(d_model, num_heads)
+        self.norm2 = nn.LayerNorm(d_model)
+        self.ffn_in = nn.Linear(d_model, ffn_dim)
+        self.ffn_out = nn.Linear(ffn_dim, d_model)
+
+    def forward(self, x, normed1, valid_token_mask, causal):
+        attn_out = self.attention(normed1, valid_token_mask, causal)
+        normed2, x = fused_add_layernorm(
+            x, attn_out, self.norm2.weight, self.norm2.bias, self.norm2.eps)
+        ffn_out = self.ffn_out(F.gelu(self.ffn_in(normed2), approximate="none"))
+        return x, ffn_out
+
+
+class _BestTransformer2(BaselineTransformer):
+    def __init__(self, config: TransformerConfig) -> None:
+        super().__init__(config)
+        opt_layers = nn.ModuleList()
+        for base_block in self.layers:
+            blk = _BestBlockTriton2(config.d_model, config.num_heads, config.ffn_dim)
+            blk.norm1 = base_block.norm1
+            blk.norm2 = base_block.norm2
+            blk.ffn_in = base_block.ffn_in
+            blk.ffn_out = base_block.ffn_out
+            blk.attention.q_proj = base_block.attention.q_proj
+            blk.attention.k_proj = base_block.attention.k_proj
+            blk.attention.v_proj = base_block.attention.v_proj
+            blk.attention.out_proj = base_block.attention.out_proj
+            opt_layers.append(blk)
+        self.layers = opt_layers
+
+    def forward(self, x, valid_token_mask=None):
+        eff_mask = _effective_mask(self, valid_token_mask)
+        causal = self.config.causal
+
+        n0 = self.layers[0].norm1
+        normed1 = F.layer_norm(x, (x.shape[-1],), n0.weight, n0.bias, n0.eps)
+
+        out = x
+        for i, layer in enumerate(self.layers):
+            x, ffn_delta = layer(x, normed1, eff_mask, causal)
+            if i + 1 < len(self.layers):
+                next_norm1 = self.layers[i + 1].norm1
+                normed1, x = fused_add_layernorm(
+                    x, ffn_delta, next_norm1.weight, next_norm1.bias, next_norm1.eps)
+            else:
+                out, x = fused_add_layernorm(
+                    x, ffn_delta, self.final_norm.weight, self.final_norm.bias, self.final_norm.eps)
+
+        if eff_mask is not None:
+            out = out.masked_fill(~valid_token_mask[..., None], 0)
+        return out
+
+
+# --------------------------------------------------------------------------- #
 # "amp" impl -- plain SDPA under CUDA float16 autocast (T6).
 # Parameters and inputs remain fp32; autocast chooses eligible mixed-precision
 # kernels and unlocks flash SDPA. CPU stays on the ordinary fp32 path.
-# Inherits _BestTransformer's Triton-fused AddNorm block (T7) -- the fusion
-# kernel casts to fp32 internally for the reduction regardless of input
-# dtype, so it should be numerically correct whether called under fp32 or
-# fp16 autocast; verified empirically on GPU (not just assumed), see
-# journal T7 AMP-integration entry.
+# Inherits _BestTransformer2's Triton-fused AddNorm block, now extended to
+# BOTH residual+norm boundaries (T7 + T15) -- the fusion kernel casts to
+# fp32 internally for the reduction regardless of input dtype, so it should
+# be numerically correct whether called under fp32 or fp16 autocast;
+# verified empirically on GPU (not just assumed), see journal T7 AMP-
+# integration entry (T7) and the T15 GPU test (both boundaries).
 # --------------------------------------------------------------------------- #
-class _AMPTransformer(_BestTransformer):
+class _AMPTransformer(_BestTransformer2):
     def forward(self, x, valid_token_mask=None):
         if x.is_cuda:
             with torch.autocast(device_type="cuda", dtype=torch.float16):
