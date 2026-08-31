@@ -440,26 +440,32 @@ because three of the four are **not** the same problem:
   evidence, because it is timestamped rather than written for a judge. Add the
   trailer going forward and state the tooling explicitly in `TECH_REPORT.md` §6.
 
-- **T16 — NEW, built, dispatched.** `candidates/v_manual_fp16.py`: attacks
-  the OTHER large item M2 found consistently on both profiled amp shapes
-  — fp32↔fp16 casting (`aten::to`/`_to_copy`/`copy_`) at **17.1-17.7%** of
-  CUDA time on shapes #8 and #13, unaddressed by T7/T15 (which targeted
-  the LayerNorm/residual side, not this). Root cause: `_AMPTransformer`
-  enters a fresh `torch.autocast` block on every single `forward()` call,
-  so every weight tensor gets re-cast fp32→fp16 from scratch every timed
-  iteration — autocast's own weight-cast cache only helps *within* one
-  call (each weight is used once per call, so it never helps here).
-  Fix: cast every Linear's weight/bias to fp16 **once**, in place, on the
-  first CUDA forward call, then never again — everything else (activation
-  casts at each Linear/attention boundary, fp32 LayerNorm reduction via
-  T7's kernel, SDPA's own internal fp32 accumulation) stays numerically
-  identical to what the current amp route already does, so this should be
-  bit-identical in output, just skipping redundant, deterministic,
-  throwaway weight-cast work. Builds on T7+T15's proven AddNorm structure
-  (both boundaries). CPU-fallback-tested (13/13-equivalent dev shapes).
-  GPU test dispatched — standalone first; only worth integrating into
-  `v_router2.py` if the amp-routed shapes (#6/#8/#13) show a real,
-  above-noise-floor (>2.7%, per S8) improvement.
+- **T16 — CLOSED, real negative result, NOT integrated.** `candidates/v_manual_fp16.py`:
+  hypothesis was that pre-casting weights to fp16 once (instead of every
+  `torch.autocast` call re-casting them from scratch — a real, traced-to-source
+  mechanism, see the mechanism writeup below) would recover part of the
+  17.1-17.7% casting tax M2 found on shapes #8/#13. **Tested standalone on
+  GPU (job 778829), 13/13 correct** (worst max_abs 0.00199 on shape 7 —
+  tight, ~99% of the 0.002 budget, notably tighter than any other candidate
+  in this repo, though still technically passing), but the per-shape
+  picture against the CURRENT leaderboard (T15) is a real mixed/negative
+  result, not a win: **#6 3.858→3.652 (-5.3%, clearly outside the ±2.7%
+  noise floor — a real regression), #8 1.815→1.849 (+1.9%, inside noise,
+  not a confirmed win), #13 13.125→12.770 (-2.7%, right at the noise
+  boundary).** Only shape 8 (the one M2 actually profiled and where the
+  hypothesis was formed) moved in the predicted direction, and even that's
+  not clearly above noise. Root cause of the mismatch, best guess: the
+  17% figure M2 measured bundles WEIGHT-casting (what T16 eliminates) and
+  ACTIVATION-casting (unavoidable either way, x changes every call) into
+  one `aten::to`/`_to_copy` bucket — for shape 6 (batch=10000, huge row
+  count) activation-casting cost scales with M and almost certainly
+  dominates weight-casting, so eliminating the weight-cast portion barely
+  helps there and the extra explicit `.half()`/`.float()` calls this
+  candidate adds at more boundaries may cost more than autocast's own
+  (likely more kernel-fused) casting saves. **Do not integrate.** A real,
+  honestly-tested negative result — the mechanism (weight re-cast every
+  call) is real and verified via source, but fixing it doesn't clearly pay
+  off given the whole 17% wasn't weight-cast to begin with.
 
 - **T17 — NEW, built, dispatched.** `candidates/v_triton_addnorm_fused.py`:
   applies T7+T15's proven AddNorm fusion (both boundaries) to the `fused`

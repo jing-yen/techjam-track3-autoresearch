@@ -141,6 +141,16 @@ if _HAS_TRITON:
         out_ptrs = out_ptr + rows[:, None] * stride_om + d_idx[None, :] * stride_od
         tl.store(out_ptrs, out.to(out_ptr.dtype.element_ty), mask=row_mask[:, None])
 
+    # Single-tile design: BLOCK_D=D, BLOCK_F=F, no K-loop -- deliberately
+    # scoped to the small-d_model family this was designed for (docs/k1-spec.md
+    # targets shape #2, d=128; the S=128 family tops out at d=128). D=F=1024
+    # (shape #8) blew this design up catastrophically (a full [1024,1024] fp32
+    # weight tile = 4MB loaded unconditionally per program instance) and hung
+    # Triton's compiler until the job was OOM-killed -- a real, found-the-hard-way
+    # bug, not a hypothetical. Guarded here so it can never be silently retried
+    # against a shape this design was never meant to cover.
+    _MAX_SINGLE_TILE_DIM = 256
+
     def fused_ffn_block(x: torch.Tensor, ln_weight, ln_bias, eps: float,
                          w1: torch.Tensor, b1: torch.Tensor,
                          w2: torch.Tensor, b2: torch.Tensor) -> torch.Tensor:
@@ -148,6 +158,10 @@ if _HAS_TRITON:
         orig_shape = x.shape
         d = orig_shape[-1]
         f = w1.shape[0]
+        if d > _MAX_SINGLE_TILE_DIM or f > _MAX_SINGLE_TILE_DIM:
+            normed = F.layer_norm(x, (d,), ln_weight, ln_bias, eps)
+            h = F.gelu(F.linear(normed, w1, b1), approximate="none")
+            return x + F.linear(h, w2, b2)
         x2d = x.reshape(-1, d).contiguous()
         m = x2d.shape[0]
         out = torch.empty_like(x2d)
