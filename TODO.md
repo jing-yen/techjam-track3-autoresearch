@@ -655,6 +655,38 @@ because three of the four are **not** the same problem:
 
 ## Open — optimization, remaining
 
+- **U-standard — CLAIMED (opus-1), 3 standard (non-exotic) HPC/ML
+  techniques dispatched, all standalone.** Prompted by a direct challenge
+  (CUDA graphs is well-known table-stakes, what ELSE standard is
+  untried?) — checked the codebase rather than guessed:
+  1. `candidates/v_router2_cudnnbench.py` — `torch.backends.cudnn.benchmark
+     = True`, the single best-known PyTorch perf flag, grepped and
+     confirmed set NOWHERE in this repo before now. Byte-identical diff
+     to `v_router2.py` otherwise. Honest caveat: this model has no conv
+     layers (the flag is conv-focused), so payoff is genuinely uncertain,
+     not assumed — that's why this is a real test, not a landed change.
+  2. `candidates/v_pretransposed.py` — pre-transpose every `nn.Linear`
+     weight once at copy time (`[out,in]`→`[in,out]`) so cuBLAS gets an
+     NN-layout GEMM instead of NT on every call. Real, standard cuBLAS
+     technique, flagged independently by a collaborator's audit (U5,
+     `docs/research-untried.md`), never tested before now. Applied to a
+     clean plain-SDPA route (no other change stacked) to isolate the
+     variable.
+  3. `candidates/v_triton_addnorm2_bufreuse.py` — T7/T15's AddNorm kernel
+     wrapper called `torch.empty_like()` fresh on every one of 8 calls
+     per forward pass; this variant lazily allocates ONE output-buffer
+     pair per model instance and reuses it every call instead. CUDA
+     graphs already solve this implicitly for the routes that use them;
+     this isolates the lever for routes that don't. Safety reasoned
+     through in the file's own docstring (in-place read-then-write is
+     safe because Triton's `tl.load` fully materializes before the later
+     `tl.store` to the same address — the classic safe in-place-update
+     pattern) but relies on real GPU correctness testing to actually
+     verify it, not the reasoning alone.
+  All three CPU-fallback tested. GPU tests dispatched. None touch shared,
+  leaderboard-critical code — standalone-first, same discipline as every
+  other change this session.
+
 - **T6 — CONFIRMED ON A100-80** (job `step4_confirm_a80`, journal iter 21).
   `torch.autocast(fp16)` (keeping norms/reductions fp32) applied to shapes
   #6/#8/#13 in `v_router2.py`. Real gain per-shape vs the fp32 router:
