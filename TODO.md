@@ -227,32 +227,74 @@ because three of the four are **not** the same problem:
   AMP routing needed.
 - **T4 — folded into B10's `codex-b10-step1.py` mask-cache fix** rather than
   landing standalone; see B10 above.
-- **T7 — CONFIRMED ON REAL GPU, broader win than expected. NOT YET
-  INTEGRATED into `v_router2` — that's the remaining step.** (journal
-  iter 29, job `777483`). Real headroom confirmed: shape #8 sat at ~28% of
-  A100's dense fp16 Tensor Core peak — reopened an item `TECH_REPORT.md`
-  had marked "insufficient headroom." Surveyed three Triton targets
-  (AddNorm vs fused-FFN-epilogue vs fused-attention+bias) before
-  committing; AddNorm (residual-add fused into the immediately-following
-  LayerNorm) confirmed as the right risk-appropriate first target —
-  matches PROGRAM.md's own #7 and Triton's textbook LayerNorm-tutorial
-  pattern (fp32-accumulated two-pass mean/var, eps inside `sqrt`, masked
-  loads/stores, dual output for the next residual).
-  **A100-80 result, `candidates/v_triton_addnorm.py` vs `best.py`, both
-  fp32/TF32-on, official protocol, 13/13 correct** (max_abs 0.0006-0.0013,
-  comfortably under the 0.002 gate — higher than the ~1e-6 baseline as
-  expected from the kernel's own fp32-reduction rounding, still safely
-  inside tolerance): **geomean 1.88x → 2.02x (+7.4%)**, broader and bigger
-  than the "likely modest" expectation — #6 +40% (1.75x→2.44x), #8 +21%
-  (1.08x→1.31x, notable since #8 was expected to gain least being
-  GEMM-bound), #1 +18%, #11 +16%.
-  **This is a standalone comparison — plain SDPA attention, no
-  AMP/compile/reduce/fused routing, no B10 mask-cache — so it does not
-  change the leaderboard number yet.** Next: fold AddNorm into
-  `v_router2.py`'s shared block (applies orthogonally to routing/precision,
-  should stack) and re-verify specifically under the `amp` route's fp16
-  `autocast`, since the Triton kernel's internal fp32-forced accumulation
-  hasn't been tested for interaction with autocast's per-op dtype policy.
+- **T7 — DONE, integrated and confirmed on the full leaderboard.** (journal
+  iter 29-30, jobs `777483`/`router2_triton_confirm2`). Surveyed three
+  Triton targets (AddNorm vs fused-FFN-epilogue vs fused-attention+bias);
+  AddNorm (residual-add fused into the immediately-following LayerNorm)
+  confirmed as the right risk-appropriate first target. Standalone A100-80
+  result vs plain LayerNorm: 13/13 correct, geomean 1.88x → 2.02x (+7.4%).
+  Integrated into `v_router2.py`'s `best`/`amp` eager routes (kept separate
+  from `compile`/`reduce`, which already get their own fusion from
+  Inductor). Full-sweep confirmation: **median 2.99x / geomean 3.72x,
+  13/13 correct** — now the leaderboard number. Honestly caveated in
+  `leaderboard.md`: the untouched `compile`/`reduce`/`fused` routes showed
+  up to ±30% run-to-run swing in the same measurement, so most of the delta
+  from 2.89x/3.58x is likely cluster/protocol variance, not purely the
+  kernel — read the per-shape numbers, not just the aggregate, before
+  citing this as "T7 added 0.14x."
+  **Caveat carried forward — the kernel itself is UNTUNED, not optimized.**
+  `candidates/v_triton_addnorm.py`'s `_fused_add_layernorm_kernel` has no
+  `@triton.autotune`, no `num_warps`/`num_stages` configuration, no
+  block-size/warp-count sweep — it runs on Triton's bare defaults.
+  `BLOCK_SIZE = triton.next_power_of_2(n_cols)` is a correctness
+  requirement, not a performance choice. This is a correct, working first
+  cut, not a tuned kernel — see T7b below.
+
+- **T7b — OPEN: autotune the T7 AddNorm kernel.** Same textbook next step
+  Triton's own tutorials use for exactly this kernel shape (a reduction +
+  elementwise kernel): wrap `_fused_add_layernorm_kernel` with
+  `@triton.autotune(configs=[...], key=["n_cols"])`, sweeping a small grid
+  of `num_warps` (e.g. 1/2/4/8) and `num_stages` (e.g. 1-4) — `BLOCK_SIZE`
+  is already fixed by correctness so it isn't a free tuning axis here.
+  Triton benchmarks each config once per distinct `n_cols` (our `d_model`
+  values: 32, 128, 1024) and caches the winner, the same mechanism
+  `torch.compile`'s own autotuning uses (see L3's finding on how that
+  caching does and doesn't dedupe — check whether the same redundant-
+  autotuning-per-occurrence issue applies here too before assuming this is
+  free). Low risk: the fusion design is already correctness-validated,
+  this only searches over launch configs for the same math.
+  *Falsify:* autotuned config matches the current default → no gain, close
+  it and say so plainly rather than re-running until something moves.
+
+- **T9 — OPEN, scope genuinely uncertain, consider asking the organizers.**
+  Would calling a standalone SOTA kernel library (flash-attn's own PyPI
+  package, xFormers' `memory_efficient_attention`) directly, rather than
+  through PyTorch's SDPA dispatcher, be in scope? Checked the actual
+  problem statement (`TikTok TechJam 2026 Information Document`): Track 3's
+  own §3.1/§3.3 do NOT contain an explicit "any open-source library is
+  fine" resource-policy statement (a *different* track's section does have
+  one, Track 3's doesn't — don't assume it carries over). §3.1 does list
+  PyTorch as one of four equally-sanctioned implementation approaches,
+  which is suggestive but not the same as an explicit blanket allowance.
+  **Substantive technical point, independent of the scope question:** we
+  already confirmed via B2 (`docs/sdpa_backend_probe_cudnn.json`) that
+  PyTorch's own SDPA dispatcher already calls into the same *class* of
+  kernel these packages provide — `SDPBackend.FLASH_ATTENTION` wraps a
+  Dao-AI-Lab-derived flash-attention kernel, `SDPBackend.EFFICIENT_ATTENTION`
+  is architecturally what xFormers' memory-efficient attention provides.
+  So calling the standalone packages directly likely would NOT unlock a
+  fundamentally different kernel — the only way it could help is if our
+  bundled PyTorch (2.10.0+cu128) lags behind the latest standalone
+  flash-attn/xformers release closely enough to matter, which is unverified
+  either way. cuDNN's fused attention (the other "top kernel" candidate) is
+  already confirmed dead-end: runtime-disabled in this exact cluster
+  environment (B2).
+  *Before spending GPU time:* (1) check whether flash-attn/xformers are
+  even installable in `~/flood_env` on the cluster, (2) compare their
+  bundled kernel version against what ships in torch 2.10.0+cu128's SDPA,
+  (3) if genuinely unsure about scope, ask the organizers rather than
+  guess — this is the one open question so far without explicit text to
+  point to either way.
 - **T2, T3 — superseded.** Both landed as `v_compile.py` / `v_fused_qkv.py` and
   are now route targets inside `v_router.py`.
 
