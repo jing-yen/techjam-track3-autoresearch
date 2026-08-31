@@ -98,6 +98,38 @@ else:
         return y, x
 
 
+def _effective_mask(module: nn.Module, valid_token_mask: Optional[torch.Tensor]):
+    """B10 mask-cache, copied from v_router2.py unmodified -- avoids a
+    per-forward GPU->CPU sync from bool(valid_token_mask.all()). Original
+    version of this file used the uncached form directly and it was the
+    real cause of a measured -30% regression (job 778957's profiler trace:
+    same or lower raw CUDA time than the unfused route, but a real
+    aten::all / _local_scalar_dense / Memcpy-DtoH sync appearing only in
+    this candidate) -- not a kernel-design flaw, a missed reuse of this
+    project's own established fix."""
+    if valid_token_mask is None:
+        return None
+    try:
+        version = valid_token_mask._version
+    except RuntimeError:
+        return valid_token_mask if not bool(valid_token_mask.all()) else None
+    key = (
+        id(valid_token_mask), valid_token_mask.data_ptr(), version,
+        tuple(valid_token_mask.shape), tuple(valid_token_mask.stride()),
+        valid_token_mask.storage_offset(), valid_token_mask.device.type,
+        valid_token_mask.device.index, valid_token_mask.dtype,
+    )
+    if (getattr(module, "_mask_cache_tensor", None) is valid_token_mask
+            and getattr(module, "_mask_cache_key", None) == key):
+        has_padding = module._mask_cache_has_padding
+    else:
+        has_padding = not bool(valid_token_mask.all())
+        module._mask_cache_tensor = valid_token_mask
+        module._mask_cache_key = key
+        module._mask_cache_has_padding = has_padding
+    return valid_token_mask if has_padding else None
+
+
 class _FusedAttention(nn.Module):
     def __init__(self, d_model: int, num_heads: int) -> None:
         super().__init__()
@@ -166,8 +198,7 @@ class UserOptimizedTransformer(BaselineTransformer):
         self.layers = opt_layers
 
     def forward(self, x, valid_token_mask=None):
-        has_padding = valid_token_mask is not None and not bool(valid_token_mask.all())
-        eff_mask = valid_token_mask if has_padding else None
+        eff_mask = _effective_mask(self, valid_token_mask)
         causal = self.config.causal
 
         n0 = self.layers[0].norm1
@@ -184,7 +215,7 @@ class UserOptimizedTransformer(BaselineTransformer):
                 out, x = fused_add_layernorm(
                     x, ffn_delta, self.final_norm.weight, self.final_norm.bias, self.final_norm.eps)
 
-        if has_padding:
+        if eff_mask is not None:
             out = out.masked_fill(~valid_token_mask[..., None], 0)
         return out
 
