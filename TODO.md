@@ -549,6 +549,22 @@ because three of the four are **not** the same problem:
   upgrade — it trades launch overhead for register pressure, and these
   small FFN blocks aren't compute-heavy enough to hide that cost.
 
+- **M2-shape6 — NEW finding, real profiler-motivated lead for the `amp`
+  route, UNCLAIMED.** `docs/research-shape6-profile.md` has the FULL raw
+  profiler table (job `779400`) — not summarized, so read it directly
+  rather than trust a paraphrase. Two things worth acting on: (1)
+  `_fused_add_layernorm_kernel` (T7+T15's kernel) is now **28.45% of CUDA
+  time (276.9ms)** at this shape's M=1.28M rows — comparable in size to
+  the fp16 GEMM itself (29.57%), not the small cost it is on other shapes.
+  (2) **`Command Buffer Full` shows up at 39.65% of CPU time (375.7ms)** —
+  a real CUDA-driver signal that the CPU is enqueueing GPU work faster
+  than the driver can accept it, i.e. the SAME class of CPU-dispatch-bound
+  symptom that turned out to explain T17's regression (fixed there via
+  manual CUDA graph capture, +51-244%). `_AMPTransformer` (the `amp`
+  route, shapes #6/#8/#13) does not use CUDA graphs at all. Whether
+  capturing it the same way T17 was captured would produce a similar win
+  here is untested — real, profiler-motivated, not yet attempted.
+
 ## Open — the measurement that unblocks the rest
 
 - **M1 — CLOSED: falsified, new leaderboard best confirmed on A100-80.**
