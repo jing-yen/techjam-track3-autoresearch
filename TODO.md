@@ -461,6 +461,21 @@ because three of the four are **not** the same problem:
   `v_router2.py` if the amp-routed shapes (#6/#8/#13) show a real,
   above-noise-floor (>2.7%, per S8) improvement.
 
+- **T17 — NEW, built, dispatched.** `candidates/v_triton_addnorm_fused.py`:
+  applies T7+T15's proven AddNorm fusion (both boundaries) to the `fused`
+  route (shapes #9/#10/#11/#12), which currently has **none** — checked
+  directly in `v_router2.py`: `_FusedBlock.forward` is plain eager
+  PyTorch, two fully unfused residual-add+LayerNorm pairs, no Triton
+  kernel at all. Unlike `compile`/`reduce` (Inductor auto-fuses this,
+  confirmed via M2) and unlike `best`/`amp` (T7+T15 already there),
+  `fused`'s only optimization has been the fused-QKV projection since
+  T5/T3 — nothing on the norm/residual side since. Reuses T7+T15's exact
+  kernel and cross-layer-chaining wiring unmodified, swapping in
+  `_FusedAttention`'s fused-QKV projection for T15's separate Q/K/V
+  Linears — the only structural difference. CPU-fallback tested (13/13-
+  equivalent dev shapes). GPU test dispatched — standalone first, same
+  workflow as T15/T16.
+
 ## Open — the measurement that unblocks the rest
 
 - **M1 — CLOSED: falsified, new leaderboard best confirmed on A100-80.**
