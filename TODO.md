@@ -121,6 +121,60 @@ avoid its measured asymmetric-kernel correctness drift.
   Full analysis incl. why sparse/linear attention is disqualified:
   `docs/research-shape14.md`.
 
+## M2 — DONE for all 3 originally-scoped shapes (#1, #8, #13); real,
+actionable finding surfaced: T7's AddNorm only covers ONE of two boundaries
+
+(job `778628`, `tools/profile_shapes.py --shapes 1,13`, joining #8's
+already-done trace). **Shape #1** (`compile` route, torch.compile+cudagraph):
+dominated by GEMMs (`triton_tem_fused_addmm_t_view` 46.5% + `ampere_sgemm`
+25.2% cuBLAS = ~72% combined, real compute, expected), flash attention
+18.8%. Confirms Inductor's own auto-fusion ALREADY fuses LayerNorm+residual
+for compiled routes (`triton_per_fused_add_addmm_native_layer_norm_view_*`,
+several kernels, ~5.6% combined) — real evidence (not just inference) that
+`v_router2.py`'s existing design comment ("T7 used only by eager routes,
+compile/reduce get their own fusion from Inductor") was correct. GELU
+shows up as its own small separate pointwise kernel
+(`triton_poi_fused_addmm_gelu_view_3`, 1.78%) — same ballpark as #8's 1.92%,
+confirms K2's conclusion generalizes: not a big lever anywhere we've measured.
+**Shape #13** (`amp` route, S=1024, eager): flash attention 24.65%, fp16
+GEMM 19.54%, fp32↔fp16 casting (`aten::to`/`_to_copy`/`copy_`) **17.66%**
+— matches #8's 17.1% almost exactly, confirming the casting tax is a
+consistent, shape-independent cost of the `autocast` approach, not a
+shape-8 fluke. **The new finding:** `aten::native_layer_norm` (UNFUSED)
+is **19.21%** of total CUDA time — bigger than T7's own already-fused
+AddNorm kernel showing up right next to it at 9.57%. Root cause, traced to
+source: `_BestBlockTriton.forward` (`v_router2.py:257-264`) fuses only
+`x + attention(norm1(x)) -> norm2`; the OTHER boundary,
+`x + ffn_out(...) -> next layer's norm1` (or `final_norm` for the last
+layer), stays two separate ops. This is real, unaddressed, and — unlike
+K2'/T10's marginal ~2% GELU opportunities — a full **19%** of one shape's
+CUDA time, using a kernel T7 already proved correct rather than a new one.
+
+- **T15 — NEW, built and dispatched.** `candidates/v_triton_addnorm2.py`:
+  extends T7's fused AddNorm kernel (unmodified, byte-identical to
+  `v_triton_addnorm.py`'s) to the second boundary. Since that boundary now
+  spans a LAYER, not a block, the per-block interface changes: each block
+  returns the raw post-attention-fused residual and the raw FFN delta
+  uncombined; the transformer-level loop calls `fused_add_layernorm`
+  between blocks (producing the next block's `norm1` input) and once more
+  after the last block (producing `final_norm`'s output directly). Layer
+  0's `norm1` has no preceding fusable add and stays a plain
+  `F.layer_norm`, same as T7 already does at its own first norm1.
+  **Padding handled by deliberately NOT threading a mask through the
+  fused kernel** — mirrors T7's own already-validated approach (T7 doesn't
+  mask between its attn-add and norm2 either): `valid_token_mask` only
+  ever affects attention's key-masking and the final output's
+  `masked_fill`, and since every op besides attention is strictly
+  row-wise, a padded row's un-zeroed intermediate value cannot influence
+  any valid row's output at any point. Argued explicitly in the file's own
+  docstring, and — because this is a new fusion, not just a re-use of
+  T7's exact validated pattern — tested empirically here too:
+  CPU-fallback correctness holds at `--padding-ratio 0.3` as well as the
+  padding-free default. GPU correctness+speed dispatched on all 13
+  official-safe shapes, expecting the biggest win on #13-shaped (long
+  S) and generally long-sequence entries in the `best`/`amp` route family
+  where this boundary was measured to matter most.
+
 ## K4 — CLOSED: real mechanism found, but it lands in warmup, not the timed
 loop, so it does NOT explain S2 (which remains genuinely open)
 
@@ -297,9 +351,19 @@ doesn't silently eat other people's GPU allocation the way it ate three of mine.
   time below ATen's 2-kernel sequence even though the raw GEMM alone
   loses — this is exactly what T10 tested, but against plain `best.py`,
   never against `compile`/`reduce`'s own already-autotuned baseline.
-  `tools/check_k2prime_backend.py` (new) dumps Inductor's generated code
-  via `TORCH_LOGS=output_code` to see whether GELU already shows up fused
-  into a pointwise kernel or stays separate — dispatched alongside K1a.
+  **CLOSED (job 778646 + M2's shape #1 trace, job 778628).** Both
+  questions now answered with real data: (1) `check_k2prime_backend.py`'s
+  own AUTOTUNE dump reconfirms ATen's `bias_addmm` wins the raw GEMM again
+  (0.0358ms vs Triton's 0.0481ms) — same conclusion, independently
+  reproduced. (2) M2's shape #1 profiler trace (a `compile`-routed shape,
+  so Inductor's own auto-fusion is active) shows GELU DOES already get its
+  own dedicated kernel (`triton_poi_fused_addmm_gelu_view_3`) separate from
+  the main GEMM kernel — but at only **1.78%** of total CUDA time, matching
+  #8's 1.92% almost exactly. So the fusion opportunity T10 chased is real
+  but consistently small (~2%) everywhere it's been measured, on both the
+  `amp` and `compile` routes — not worth further GPU time chasing directly;
+  M2's OTHER finding from this same batch (the unfused second AddNorm
+  boundary, ~19% on shape #13) is the actionable one. See T15 above.
 - **K3 — split-K attention for #9 — BOUNDED, DO NOT BUILD.** Attention is 14%
   of #9; max whole-layer gain ~1.09x, under the noise floor. Logged as
   considered.
