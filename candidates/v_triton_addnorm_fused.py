@@ -76,10 +76,24 @@ if _HAS_TRITON:
 
     def fused_add_layernorm(residual: torch.Tensor, delta: torch.Tensor,
                              weight: torch.Tensor, bias: torch.Tensor, eps: float):
+        # NOTE (T17 CPU-dispatch-overhead investigation, journal iter 50+):
+        # dropped the redundant .contiguous() after .reshape() -- reshape()
+        # already returns a contiguous view when the source is contiguous
+        # (true here: residual/delta come from Linear/GELU/this-same-
+        # kernel's own outputs, all naturally contiguous) or copies
+        # internally when it isn't, so the explicit call was a pure extra
+        # Python-level dispatch with no effect on the result. Profiler
+        # evidence (job 779094 vs 779098) showed this wrapper's CPU-side
+        # overhead landing directly on the critical path for low-compute
+        # shapes (#9/#10/#12, where the GPU has too little concurrent work
+        # to hide it behind) while shape #11's much larger attention GEMM
+        # hid the same overhead completely -- trimming real, measured
+        # Python-dispatch cost here, not chasing a copy that wasn't
+        # actually happening.
         orig_shape = residual.shape
         n_cols = orig_shape[-1]
-        residual2d = residual.reshape(-1, n_cols).contiguous()
-        delta2d = delta.reshape(-1, n_cols).contiguous()
+        residual2d = residual.reshape(-1, n_cols)
+        delta2d = delta.reshape(-1, n_cols)
         n_rows = residual2d.shape[0]
 
         out = torch.empty_like(residual2d)
