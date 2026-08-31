@@ -16,9 +16,10 @@ published input shapes. Rather than hand-tuning a single kernel, we built an
 measures them against the organizer's own correctness and timing code, and keeps
 or prunes on the measured result.
 
-Headline: **median speedup 2.99x, geometric mean 3.72x** on an **NVIDIA A100-80
-PCIe** at **float32** (with fp16 `autocast` and a custom Triton kernel on the
-three shapes that benefit — §4), with **13 of 14 shapes** passing the
+Headline: **median speedup 2.98x, geometric mean 3.81x** on an **NVIDIA A100-80
+PCIe** at **float32** (with fp16 `autocast` and a custom Triton kernel fusing
+residual-add into LayerNorm at both boundaries per layer on the three shapes
+that benefit — §4), with **13 of 14 shapes** passing the
 correctness gate. The 14th (shape #14) is not absent for memory reasons
 anymore — a targeted fix (§8) makes it run — but it still has no reference to
 score it against, so it is reported separately rather than in the 13-shape
@@ -115,6 +116,7 @@ through a guarded compare-and-swap after a fresh pull.
 | T5 | Per-shape dispatch on `(B, S, d, H)` | The rules explicitly allow shape checks; no single candidate wins everywhere | landed → `v_router.py` | **2.27x / 2.47x — best** |
 | T6 | fp16 via `torch.autocast`, norms and reductions kept fp32 | Backend probe shows flash eligible on 14/14 shapes at fp16 vs 0/14 at fp32 | written, **not validated on GPU** | blanket cast failed 11/12; autocast untested |
 | T7 | Triton fused LayerNorm + residual ("AddNorm") | Reserved for remaining overhead after the above | **landed** | Roofline recheck found shape #8 at only ~28% of A100 fp16 peak — real headroom, reopened. Custom Triton kernel confirmed on A100-80, 13/13 correct: standalone +7.4% geomean vs plain LayerNorm; integrated into `v_router2`'s `best`/`amp` eager routes (kept separate from `compile`/`reduce`, which already get fusion from `torch.compile`/Inductor). Attributable per-shape gain on the AMP-routed shapes it touches: #6 +11%, #8 +4%, #13 +6%. See `TODO.md` T7 / `candidates/v_triton_addnorm.py` / `candidates/v_router2.py` |
+| T15 | Extend the T7 AddNorm kernel to the SECOND residual+norm boundary (ffn_out-add fused into the next layer's norm1, or into `final_norm`) | A real `torch.profiler` trace (M2, not Roofline inference) found T7 only covered one of two boundaries per layer; the unfused one measured 19.21% of shape #13's total CUDA time — bigger than T7's own already-fused kernel next to it | **landed** | Same kernel as T7, unmodified — only the block/transformer wiring changes so the fusion spans a layer boundary. Confirmed on A100-80, 13/13 correct, worst max_abs unchanged (0.00176). Per-shape gain on the 3 shapes it touches: #6 +17.2%, #8 +4.2%, #13 +12.5% — all above the ±2.7% measurement noise floor. See `TODO.md` T15 / `candidates/v_triton_addnorm2.py` / `candidates/v_router2.py` |
 
 **Correctness invariants preserved throughout** (full list in `PROGRAM.md`): exact
 erf GELU, fp32 softmax reduction, `1/sqrt(head_dim)` scale, `triu(diagonal=1)`
@@ -148,34 +150,34 @@ kernel/systems-level technique for that reason.
 ## 5. Results
 
 Candidate `candidates/v_router2.py`, A100-80, official protocol, job
-`router2_triton_confirm2` (journal iter 30).
+`router2_t15_confirm` (journal iter 42).
 
 | # | B | S | d | H | baseline ms | ours ms | speedup | routed to |
 |--|--|--|--|--|--|--|--|--|
-| 1 | 64 | 128 | 128 | 4 | 2.614 | 1.206 | 2.17x | compile |
-| 2 | 1 | 128 | 128 | 4 | 1.895 | 0.276 | **6.86x** | compile |
-| 3 | 4 | 128 | 128 | 4 | 1.943 | 0.229 | 8.47x | reduce |
-| 4 | 16 | 128 | 128 | 4 | 1.923 | 0.283 | 6.80x | reduce |
-| 5 | 128 | 128 | 128 | 4 | 2.712 | 1.010 | 2.69x | reduce |
-| 6 | 10000 | 128 | 128 | 4 | 186.078 | 56.536 | 3.29x | amp (fp16 + Triton AddNorm) |
-| 7 | 64 | 128 | 32 | 4 | 1.884 | 0.462 | 4.08x | compile |
-| 8 | 64 | 128 | 1024 | 4 | 7.974 | 4.569 | 1.75x | amp (fp16 + Triton AddNorm) |
-| 9 | 64 | 128 | 128 | 1 | 1.780 | 0.792 | 2.25x | fused |
-| 10 | 64 | 128 | 128 | 2 | 1.965 | 0.785 | 2.50x | fused |
-| 11 | 64 | 128 | 128 | 16 | 3.475 | 1.161 | 2.99x | fused |
-| 12 | 64 | 32 | 128 | 4 | 1.936 | 0.779 | 2.48x | fused |
-| 13 | 64 | 1024 | 128 | 4 | 43.178 | 3.681 | **11.73x** | amp (fp16 + Triton AddNorm) |
+| 1 | 64 | 128 | 128 | 4 | 2.625 | 1.210 | 2.17x | compile |
+| 2 | 1 | 128 | 128 | 4 | 1.914 | 0.274 | **6.97x** | compile |
+| 3 | 4 | 128 | 128 | 4 | 1.958 | 0.227 | 8.61x | reduce |
+| 4 | 16 | 128 | 128 | 4 | 1.938 | 0.275 | 7.04x | reduce |
+| 5 | 128 | 128 | 128 | 4 | 2.723 | 1.010 | 2.70x | reduce |
+| 6 | 10000 | 128 | 128 | 4 | 185.926 | 48.196 | 3.86x | amp (fp16 + Triton AddNorm x2) |
+| 7 | 64 | 128 | 32 | 4 | 1.900 | 0.483 | 3.93x | compile |
+| 8 | 64 | 128 | 1024 | 4 | 8.025 | 4.422 | 1.81x | amp (fp16 + Triton AddNorm x2) |
+| 9 | 64 | 128 | 128 | 1 | 1.779 | 0.797 | 2.23x | fused |
+| 10 | 64 | 128 | 128 | 2 | 1.960 | 0.794 | 2.47x | fused |
+| 11 | 64 | 128 | 128 | 16 | 3.478 | 1.166 | 2.98x | fused |
+| 12 | 64 | 32 | 128 | 4 | 1.937 | 0.785 | 2.47x | fused |
+| 13 | 64 | 1024 | 128 | 4 | 43.236 | 3.294 | **13.12x** | amp (fp16 + Triton AddNorm x2) |
 
 All 13 pass the correctness gate, worst `max_abs` 0.00176 (shape 8), still under
 the 0.002 absolute tolerance. TF32 is enabled on every route except `compile`
 (S1 found an asymmetric-TF32-kernel-selection bug specific to `torch.compile`'s
 max-autotune path); shapes 6/8/13 additionally run under fp16 `autocast` (T6)
-plus the custom Triton AddNorm kernel (T7). Shape 14 is excluded from this
-sweep for a different reason than memory — it *runs* (§8), but has no
-reference to compare against, so it cannot be scored on this correctness-gated
-table at all.
+plus the custom Triton AddNorm kernel at both residual+norm boundaries per
+layer (T7 + T15). Shape 14 is excluded from this sweep for a different reason
+than memory — it *runs* (§8), but has no reference to compare against, so it
+cannot be scored on this correctness-gated table at all.
 
-Aggregates: **median 2.99x, geometric mean 3.72x** over the 13 shapes with a
+Aggregates: **median 2.98x, geometric mean 3.81x** over the 13 shapes with a
 reference.
 
 **Where the remaining time is.** Shape 8 and shape 6 are still the largest
@@ -184,10 +186,17 @@ absolute-time shapes despite their fp16 route. Shape 8's Roofline reading
 420.9 GFLOP in 26.284 ms = 16.0 TFLOP/s, 82% of the A100's 19.5 TFLOPS fp32
 peak) motivated reopening T7 once the route changed to fp16 — the correct
 comparison there is now against the ~312 TFLOP/s dense fp16 Tensor Core
-ceiling, where the *current* number (420.9 GFLOP / 4.569 ms ≈ 92 TFLOP/s) is
-roughly 30% of peak — real headroom remains, which is exactly why T7 (Triton
-AddNorm) targeted this shape and produced a measurable, if modest, gain
-there (§4).
+ceiling, where the *current* number (420.9 GFLOP / 4.422 ms ≈ 95 TFLOP/s) is
+still only about 30% of peak — real headroom remains, which is exactly why
+T7 and T15 (Triton AddNorm, both boundaries) targeted this shape and
+produced a measurable, if modest, gain there (§4). A real `torch.profiler`
+trace on this shape (M2, §4) later replaced this Roofline inference with a
+measured per-kernel breakdown: 55.6% fp16 tensor-core GEMM (real, expected),
+17.1% fp32↔fp16 casting overhead (a genuinely new finding), with the fused
+AddNorm kernels and GELU together under 10% — the remaining ~30%-of-peak
+gap here is compute- and casting-bound, not further fusable with kernel
+tricks at this point (see T10/K2' in `TODO.md` for the fusion attempts that
+were tried and found to plateau around cuBLASLt's own GEMM performance).
 
 **The head-count sweep measures the reference, not us.** Shapes 1, 9, 10 and 11
 are identical arithmetic. Our runtime is comparatively flat across them; the

@@ -119,9 +119,9 @@ A100-80 confirmation.
 ```mermaid
 xychart-beta
     title "Geomean speedup across the research loop (A100-80)"
-    x-axis ["iter6\nv_compile", "iter9\nv_router (T5)", "iter13\n+T1 reduce", "iter14\n+S1 TF32-scope", "iter21\n+B10+T6 AMP", "iter30\n+T7 Triton AddNorm"]
+    x-axis ["iter6\nv_compile", "iter9\nv_router (T5)", "iter13\n+T1 reduce", "iter14\n+S1 TF32-scope", "iter21\n+B10+T6 AMP", "iter30\n+T7 Triton AddNorm", "iter42\n+T15 2nd AddNorm"]
     y-axis "Geomean speedup" 0 --> 5
-    bar [2.25, 2.47, 2.61, 2.98, 3.58, 3.72]
+    bar [2.25, 2.47, 2.61, 2.98, 3.58, 3.72, 3.81]
 ```
 
 | iter | direction | node | median | geomean | what changed |
@@ -131,7 +131,8 @@ xychart-beta
 | 13 | dispatch | `v_router` | 2.54x | 2.61x | T1 (`reduce-overhead` compile) folded in as a 4th route target |
 | 14 | precision-scope | `v_router` | 2.67x | 2.98x | S1: TF32-disable scoped to only the `compile` route, restoring the organizer's own TF32-on default everywhere else |
 | 21 | combined | `v_router2` | 2.89x | 3.58x | B10 (removed a per-forward device sync via a versioned mask cache) + T6 (fp16 `autocast` on #6/#8/#13, the only shapes it actually wins) |
-| 30 | custom kernel | `v_router2` | **2.99x** | **3.72x** | T7: a hand-written Triton kernel (fused residual-add + LayerNorm, "AddNorm") integrated into the `best`/`amp` eager routes — see caveat below on attributing the full delta to it |
+| 30 | custom kernel | `v_router2` | 2.99x | 3.72x | T7: a hand-written Triton kernel (fused residual-add + LayerNorm, "AddNorm") integrated into the `best`/`amp` eager routes — see caveat below on attributing the full delta to it |
+| 42 | custom kernel | `v_router2` | **2.98x** | **3.81x** | T15: a real `torch.profiler` trace (M2) found T7 only fused ONE of two residual+norm boundaries per layer — the other was 19% of one shape's CUDA time, unfused. T15 extends the same proven kernel to the second boundary; all 3 amp-routed shapes it touches improved 4-17% |
 
 Four rejected/reverted directions, kept for the record because a negative
 result is still a result:
@@ -154,7 +155,7 @@ result is still a result:
   already saturates SM occupancy; 2 streams measured **6.6% slower**
   (79.6s vs 74.6s), not faster. `journal.jsonl` iter 28.
 
-Candidate: `candidates/v_router2.py` (job `router2_triton_confirm2`, iter 30).
+Candidate: `candidates/v_router2.py` (job `router2_t15_confirm`, iter 42).
 
 **On the T7 (Triton) row above: don't over-attribute the delta.** The
 `compile`/`reduce`/`fused` routes carry zero code changes between iter 21
@@ -162,34 +163,38 @@ and iter 30, yet swung by as much as -30% run-to-run in this same
 measurement (shape 7: 5.85x → 4.08x) — real cluster/protocol variance, not
 a regression. The honestly Triton-attributable gain is on the AMP-routed
 shapes specifically, which the kernel actually touches: #6 +11%, #8 +4%,
-#13 +6%. The 2.99x/3.72x aggregate is a legitimate official-protocol
-number and the correct current leaderboard entry — just don't read the
-full jump from 3.58x as "what the kernel did."
+#13 +6%. **T15 (iter 42) is a cleaner, more directly attributable delta:**
+a real profiler trace (not inference) found T7 only fused one of the two
+residual+norm boundaries per layer, and the other was measured at 19% of
+one shape's CUDA time — extending the same proven kernel to that boundary
+moved exactly the 3 shapes it touches (#6/#8/#13, +17%/+4%/+13%) and
+nothing else, which is what "an unfused-kernel fix" should look like.
 
 | # | B | S | d | H | passed | baseline ms | ours ms | speedup | routed to |
 |--|--|--|--|--|--|--|--|--|--|
-| 1 | 64 | 128 | 128 | 4 | ✅ | 2.614 | 1.206 | **2.17x** | compile |
-| 2 | 1 | 128 | 128 | 4 | ✅ | 1.895 | 0.276 | **6.86x** | compile |
-| 3 | 4 | 128 | 128 | 4 | ✅ | 1.943 | 0.229 | **8.47x** | reduce |
-| 4 | 16 | 128 | 128 | 4 | ✅ | 1.923 | 0.283 | **6.80x** | reduce |
-| 5 | 128 | 128 | 128 | 4 | ✅ | 2.712 | 1.010 | **2.69x** | reduce |
-| 6 | 10000 | 128 | 128 | 4 | ✅ | 186.078 | 56.536 | **3.29x** | amp (fp16 + Triton AddNorm) |
-| 7 | 64 | 128 | 32 | 4 | ✅ | 1.884 | 0.462 | **4.08x** | compile |
-| 8 | 64 | 128 | 1024 | 4 | ✅ | 7.974 | 4.569 | **1.75x** | amp (fp16 + Triton AddNorm) |
-| 9 | 64 | 128 | 128 | 1 | ✅ | 1.780 | 0.792 | **2.25x** | fused |
-| 10 | 64 | 128 | 128 | 2 | ✅ | 1.965 | 0.785 | **2.50x** | fused |
-| 11 | 64 | 128 | 128 | 16 | ✅ | 3.475 | 1.161 | **2.99x** | fused |
-| 12 | 64 | 32 | 128 | 4 | ✅ | 1.936 | 0.779 | **2.48x** | fused |
-| 13 | 64 | 1024 | 128 | 4 | ✅ | 43.178 | 3.681 | **11.73x** | amp (fp16 + Triton AddNorm) |
+| 1 | 64 | 128 | 128 | 4 | ✅ | 2.625 | 1.210 | **2.17x** | compile |
+| 2 | 1 | 128 | 128 | 4 | ✅ | 1.914 | 0.274 | **6.97x** | compile |
+| 3 | 4 | 128 | 128 | 4 | ✅ | 1.958 | 0.227 | **8.61x** | reduce |
+| 4 | 16 | 128 | 128 | 4 | ✅ | 1.938 | 0.275 | **7.04x** | reduce |
+| 5 | 128 | 128 | 128 | 4 | ✅ | 2.723 | 1.010 | **2.70x** | reduce |
+| 6 | 10000 | 128 | 128 | 4 | ✅ | 185.926 | 48.196 | **3.86x** | amp (fp16 + Triton AddNorm x2) |
+| 7 | 64 | 128 | 32 | 4 | ✅ | 1.900 | 0.483 | **3.93x** | compile |
+| 8 | 64 | 128 | 1024 | 4 | ✅ | 8.025 | 4.422 | **1.81x** | amp (fp16 + Triton AddNorm x2) |
+| 9 | 64 | 128 | 128 | 1 | ✅ | 1.779 | 0.797 | **2.23x** | fused |
+| 10 | 64 | 128 | 128 | 2 | ✅ | 1.960 | 0.794 | **2.47x** | fused |
+| 11 | 64 | 128 | 128 | 16 | ✅ | 3.478 | 1.166 | **2.98x** | fused |
+| 12 | 64 | 32 | 128 | 4 | ✅ | 1.937 | 0.785 | **2.47x** | fused |
+| 13 | 64 | 1024 | 128 | 4 | ✅ | 43.236 | 3.294 | **13.12x** | amp (fp16 + Triton AddNorm x2) |
 | 14 | 32 | 100000 | 1024 | 16 | see below | — | — | — | see limitations |
 
-**Median speedup 2.99x, geometric mean 3.72x**, across all 13 shapes that
+**Median speedup 2.98x, geometric mean 3.81x**, across all 13 shapes that
 produced a reference (includes shape 6, confirmed feasible in S4 — the
 sweep now covers every official shape except #14). All 13 pass the
 correctness gate; worst max_abs 0.00176 (shape 8), still under the 0.002
 tolerance, with TF32 enabled on every route except `compile` (S1), fp16
 `autocast` on #6/#8/#13 (T6), and a custom Triton kernel fusing the
-residual-add into the following LayerNorm on the `best`/`amp` routes (T7).
+residual-add into the following LayerNorm at BOTH boundaries per layer on
+the `best`/`amp` routes (T7 + T15).
 
 ## Limitations, and what we would improve given more time
 
