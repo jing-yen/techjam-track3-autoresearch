@@ -433,26 +433,39 @@ because three of the four are **not** the same problem:
   real). **Still open:** profile #1 (small) and #13 (long-seq) too, for
   the full 2-3-shape picture originally scoped.
 
-- **T10 — WRITTEN, CPU-fallback-tested, GPU-UNTESTED (blocked on SSH being
-  down).** `candidates/v_triton_fused_ffn.py`: a Triton GEMM+bias+erf-GELU
-  epilogue kernel fusing `ffn_in`'s Linear+bias+GELU into one kernel launch
-  (follows Triton's own tutorial block-tiled-matmul pattern; `ffn_out`
-  stays a plain `nn.Linear` — nothing follows it before the residual add
-  worth fusing into this kernel). CPU-fallback path (plain PyTorch,
-  identical math, used when no CUDA): **13/13 correct, max_abs ~1e-6.**
-  Real Triton/GPU path is completely unverified — both correctness and
-  speed — since no CUDA was available while this was written. Block sizes
-  (`BLOCK_M=64, BLOCK_N=64, BLOCK_K=32`) are untuned tutorial defaults, same
-  caveat as T7 pre-T7b. Calibration from the literature (DeepFusionKernel,
-  arXiv Feb 2026, cited via a second independent research pass): comparable
-  fused-FFN work reports ~10% on A100 for a similar fusion — a reasonable
-  expectation to calibrate against, not a promise.
-  *Risk, stated plainly, unchanged from the original note:* this GEMM has
-  to actually beat cuBLAS/Inductor's already-tuned matmul, not just save
-  bandwidth like AddNorm did — a first attempt landing at parity or worse
-  before tuning helps is expected, not a sign the approach is wrong.
-  *Next step the moment GPU access returns:* `bench_harness.py` correctness
-  on shapes 1-13, no speed claims until that passes.
+- **T10 — LANDED for non-amp shapes, CLOSED (do-not-pursue further) for
+  the 3 amp-routed shapes (#6/#8/#13).** `candidates/v_triton_fused_ffn.py`:
+  Triton GEMM+bias+erf-GELU epilogue fusing `ffn_in`'s Linear+bias+GELU.
+  13/13 correct on real GPU (`input_precision="ieee"` fix for the TF32
+  default bug — journal, job `778135`/`778149`), standalone geomean 1.85x
+  vs plain best.py, but shape 8 regressed to 0.84x. A 12-config
+  `@triton.autotune` sweep (journal iter 37, job `778315`) did NOT fix
+  shape 8 (0.83x, unchanged) and made most *other* shapes slightly worse
+  (geomean fell to 1.73x) — proved it's a precision/structural mismatch,
+  not a tuning gap (see M2 below).
+  **T10-fp16 follow-up, CLOSED — real negative result (journal iter 38,
+  `candidates/v_triton_fused_ffn_fp16.py`, job `778353`, both array tasks
+  COMPLETED):** explicit fp16-compute variant (casts x/weight to fp16
+  before `tl.dot`, fp32 accumulate/epilogue, no `input_precision` flag
+  needed since TF32 truncation is fp32-input-only). **13/13 correct**
+  (max_abs ≤0.0013, well inside budget) — the correctness risk flagged at
+  write-time did NOT materialize. But speed on the 3 shapes that actually
+  matter for this fix (amp-routed #6/#8/#13, standalone-vs-plain-best.py
+  speedup) is **still below `v_router2`'s current amp route**: shape 6
+  2.24x vs 3.29x, shape 8 1.31x vs 1.74x, shape 13 4.38x vs 11.66x. fp16
+  did move shape 8 off its 0.83x floor (real improvement over T10-fp32),
+  but a hand-written Triton fp16 GEMM still can't beat cuBLASLt's
+  tensor-core GEMM at these sizes — consistent with M2's profiler finding
+  that GELU itself is only 1.92% of shape 8's time, so fusion has almost
+  no addressable overhead left once the 55.6% GEMM floor is fixed cost.
+  **Conclusion: do not route T10 (either precision) to #6/#8/#13 — leave
+  `amp`'s plain `nn.Linear`+GELU there.** T10-fp32 remains real, correct,
+  and a net win for the *other* 10 shapes where it doesn't compete against
+  cuBLASLt fp16 tensor cores (already reflected in the 1.85x fixed-config
+  standalone geomean). No further T10 GPU time planned — closing this
+  thread; if someone wants to keep pushing shape 8 specifically, the next
+  real lever would have to beat cuBLASLt's GEMM itself (e.g. a genuinely
+  different algorithm/library), not more fusion around it.
 
 - **T11 — OPEN, the actionable follow-through to L3 (which was
   explanatory-only).** L3 confirmed `torch.compile`'s max-autotune does
