@@ -495,29 +495,32 @@ because three of the four are **not** the same problem:
   call) is real and verified via source, but fixing it doesn't clearly pay
   off given the whole 17% wasn't weight-cast to begin with.
 
-- **T17 — REOPENED, real bug found and fixed, retest dispatched.**
-  `candidates/v_triton_addnorm_fused.py`: applied T7+T15's proven AddNorm
-  fusion (both boundaries) to the `fused` route, which had none. First
-  standalone GPU test (job 778892) showed a large, unambiguous regression
-  vs the current leaderboard's `fused`-routed numbers: #9 -30.2%, #10
-  -29.9%, #12 -30.5%. **The "best guess" written here at the time
-  (`.contiguous()` overhead) was WRONG** — got real profiler data instead
-  of leaving a guess in the record (`tools/profile_t17_regression.py`, job
-  778957): T17's raw CUDA time on shape #9 was actually **LOWER** than the
-  current route (15.79ms vs 18.54ms) — the fusion itself works and is
-  genuinely faster. **The actual bug:** T17's `forward()` called
-  `bool(valid_token_mask.all())` directly instead of `v_router2.py`'s
-  `_effective_mask()` (B10's cached version) — a real per-forward
-  GPU→CPU sync, visible in the trace as `aten::all` /
-  `_local_scalar_dense` / `Memcpy DtoH` appearing ONLY in T17's profile,
-  not the baseline's. Exactly the bug class B10 was built to fix
-  elsewhere in this project (worth 2.92x→3.30x geomean when it landed) —
-  I just forgot to reuse that fix when writing a fresh candidate file.
-  Fixed (copied `_effective_mask` verbatim), CPU-fallback re-verified,
-  retest dispatched (job 779035). **Lesson:** always check a new
-  candidate reuses established sync-avoidance helpers, not just the
-  kernel/fusion logic being tested — an unrelated bug can fully mask a
-  real win.
+- **T17 — CLOSED again after the fix, still a real (smaller) negative
+  result. Do not integrate.** `candidates/v_triton_addnorm_fused.py`:
+  applied T7+T15's proven AddNorm fusion (both boundaries) to the `fused`
+  route, which had none. First test (job 778892): large regression, #9
+  -30.2%, #10 -29.9%, #12 -30.5%. Root-caused via real profiler data
+  (`tools/profile_t17_regression.py`, job 778957, not the wrong
+  `.contiguous()` guess originally written here): T17's raw CUDA time on
+  shape #9 was actually LOWER than the current route (15.79ms vs
+  18.54ms — the fusion itself is genuinely faster), but `forward()`
+  called `bool(valid_token_mask.all())` directly instead of
+  `v_router2.py`'s `_effective_mask()` (B10's cache), causing a real
+  per-forward GPU→CPU sync. Fixed, retested (job 779035, **13/13
+  correct**): the fix helped — shape 11 improved further (+3.8%→+11.8%),
+  shapes 9/10/12 improved modestly (**-30.2%→-27.9%, -29.9%→-27.5%,
+  -30.5%→-27.6%**) — but the core regression on those three shapes
+  barely moved. **The mask-cache bug was real and worth fixing, but was
+  NOT the primary cause of the regression — something else, still
+  undiagnosed, dominates.** Given the fix only recovered ~2-3 points of a
+  30-point gap, and two profiler passes plus a persistent-kernel
+  redesign (K1a-persistent, tested on its own merits, also failed) have
+  already gone into this thread, **stopping here** — diminishing returns
+  against a confirmed, working T15 already on the leaderboard. Do not
+  integrate T17. If anyone picks this up again: the mask-cache fix and
+  the profiler trace are both real, reusable groundwork — the remaining
+  gap needs a fresh profiler comparison of the FIXED T17 against the
+  current route, not another guess.
 
 - **K1a-persistent — CLOSED, real negative result, worse than non-persistent
   K1a.** `candidates/v_triton_k1a_persistent.py`: same fused FFN-block
