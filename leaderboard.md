@@ -3,6 +3,37 @@
 Update only via the **guarded best update** in `AGENTS.md` §2 (pull → re-check →
 replace only if strictly better).
 
+## Provisional — pending SoC confirmation (do not treat as the confirmed entry)
+
+`candidates/v_router2_autotuned.py` (journal iter 55/57/58), RunPod
+A100-SXM4-80GB (**not** the SoC cluster — different physical GPU from the
+"Confirmed best" entry below). Four stacked changes over `v_router2.py`:
+1. T7b's `@triton.autotune` on the shared AddNorm kernel.
+2. Explicit `chunked14amp` route for shape 14 (was falling through to
+   `compile`, which never finishes for this shape — iter 7). Now ~8.1s/pass.
+3. Shape 13 explicitly routed to `amp` instead of its `compile` fallback:
+   4.03x → 14.16x, isolated and in-sweep alike (the iter-54 CUDA-graph-
+   presence side effect did **not** reproduce here).
+4. A systematic 6-way re-comparison (best/amp/compile/reduce/fused/fusedcg)
+   across all 13 shapes, since the route table predated T7/T15/T17/T7b —
+   found shapes 1, 2, 3, 5, 7, 11 all had a better option available.
+
+**13/13 correct. Median 4.57x → 5.36x (+17.3%), geomean 4.85x → 6.46x
+(+33.2%)**, vs the plain `v_router2.py` RunPod baseline on the same device.
+Note: the median under-represents the true improvement — every individually
+re-routed shape improved or held steady; the modest apparent median dip
+between milestones is attributable to ordinary run-to-run noise on two
+*unchanged* shapes (9, 10) landing near the sort boundary, not a regression
+(see journal iter 58 for the full per-shape accounting).
+
+Per explicit direction, using RunPod-only validation for now rather than
+blocking on SoC queue availability — **do not promote this to "best
+candidate" below until it's been run on the SoC A100-80 and passes the same
+guarded-update check**, since device consistency is exactly what that check
+exists to protect.
+
+## Confirmed best (SoC cluster, canonical device)
+
 | field | value |
 |--|--|
 | best candidate | `candidates/v_router2.py` (T5 dispatch + B10 mask-cache + T6 AMP on 6/8/13 + T7+T15 Triton AddNorm on best/amp routes + T17 AddNorm+CUDA-graph on the fused route, shapes 9-12) |

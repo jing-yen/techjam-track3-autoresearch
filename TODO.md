@@ -268,9 +268,19 @@ doesn't silently eat other people's GPU allocation the way it ate three of mine.
   been combined. `torch.library.triton_op` / `capture_triton` let Inductor fuse
   *around* a custom Triton kernel. T17 used manual CUDA graphs instead — a
   different lever, not this one.
-- **U5 — weight pre-transposition.** Cheap A/B, never run. (The "#6 is 86%
-  GEMM" figure previously here was **unsourced and wrong** — the profile shows
-  the fp16 GEMM kernel at 29.57% of CUDA time.)
+- **U5 — weight pre-transposition. RUN, and REJECTED (journal iter 56).**
+  Standalone: real win on a plain baseline (1.80x/1.84x). Stacked onto the
+  amp/fusedcg routes specifically (isolated pilot classes, `candidates/
+  v_router2_pt_test.py`, compile/reduce untouched): every touched shape
+  **regressed 10.6-43.8%** (shape 6: 4.05x → 2.28x), every untouched control
+  shape stayed within this file's own documented noise floor — a real,
+  attributable effect, not noise. Likely cause: `PreTransposedLinear` does
+  `matmul` then a separate `+ bias` (two kernel launches) where `nn.Linear`'s
+  `F.linear` fuses GEMM+bias into one via cuBLASLt's epilogue — with 6 Linear
+  layers × 4 transformer layers, that adds real GPU-side per-launch cost even
+  under CUDA graph replay, outweighing the NN-vs-NT layout win. Do not
+  integrate into the router. Kept in the repo as documented negative-result
+  research (same convention as `v_triton_megakernel_s2.py`).
 - **U6 — A100 L2 persistence window** (`accessPolicyWindow`). Real Ampere
   feature, absent from this project, but needs a C++ extension. Listed, not
   started.
@@ -623,7 +633,42 @@ because three of the four are **not** the same problem:
   journal iter 21), all 13/13 correct, worst max_abs 0.00168 (atol 0.002) —
   up from the router's 2.67x/2.98x. This is now the leaderboard number.
 
-## Open — shape 14
+## Done — shape 14 now has a router (journal iter 55, `v_router2_autotuned.py`)
+
+- **S5-chunksize — RESOLVED.** Calibration (5-pass reduced protocol, RunPod
+  A100-SXM4-80GB, matching SoC's own fallback protocol for this shape):
+  chunk=4 fp32 (SoC reference, iter 22) ~74.6s/pass; chunk=8 fp32 ~68.3s/pass
+  (only ~8% faster — chunk size alone barely matters); chunk=8 fp16
+  ~8.2s/pass; chunk=16 fp16 ~8.3s/pass (statistically identical to chunk=8).
+  **Precision, not chunk granularity, is the real lever** (~9.1x from fp16
+  alone) — consistent with shape 14 being memory-bandwidth-bound (seq_len
+  100,000) rather than launch-overhead-bound. Adopted chunk=8+fp16 (smaller
+  memory footprint than chunk=16 for the same speed, no reason to go bigger).
+- **Router gap fixed.** `v_router2.py` previously had shape 14 falling
+  through to the `compile` fallback, which B5 already proved **never
+  finishes** for this shape (killed at SLURM's 15-min limit, zero progress).
+  So this isn't purely a speed win — it fixes shape 14 from "doesn't
+  complete" to "runs in ~8.1s/pass", wired in as an explicit
+  `chunked14amp` route in `candidates/v_router2_autotuned.py`. GPU-confirmed
+  through the actual router file (not just the standalone candidate):
+  8142ms/pass, matching the standalone calibration almost exactly.
+- **Still true, and worth knowing:** the original B5 finding was right that
+  this shape isn't in scope for the primary 13-shape median/geomean (no
+  reference exists to gate it), and TODO.md's own "Resolved by the problem
+  statement" section below confirms **there is no organizer-run benchmark or
+  fixed target hardware (§3.2/§3.4)** — we choose the GPU, we run it, we
+  report honestly. So RunPod-only validation (not yet cross-checked on the
+  SoC cluster) is legitimate for the actual deliverable, not just an
+  expedient shortcut — still worth a SoC cross-check for our own confidence
+  before finalizing, but not a hard submission requirement.
+- **T7b also landed alongside this** (same file): `@triton.autotune` on the
+  shared `_fused_add_layernorm_kernel`, previously validated only in
+  isolation. Shapes 1-13: median 4.57x → **4.89x** (+7.0%), geomean 4.849 →
+  **4.882** (+0.7%), 13/13 correct, no regression on shape 13 (the
+  CUDA-graph-presence-sensitive shape from iter 54 — this change adds no new
+  graph-capturing code, so nothing new to trigger that side effect).
+
+## Superseded — shape 14 (kept for the OOM arithmetic/history, see above for current state)
 
 - **B5 — CLOSED with real evidence, no further work.** OOM during optimized-model
   warmup at **73.85 GB of 79.25 GB** (journal iter 7), confirming plain

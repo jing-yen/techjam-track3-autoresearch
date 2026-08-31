@@ -1,0 +1,156 @@
+<title>Speedup Progression</title>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@500;650&family=IBM+Plex+Mono:wght@500;600&display=swap">
+<style>
+  .viz-root {
+    color-scheme: light;
+    --surface-1:      #fcfcfb;
+    --surface-2:      #f3f2ef;
+    --text-primary:   #0b0b0b;
+    --text-secondary: #52514e;
+    --text-muted:     #85837c;
+    --grid:           #e4e2dc;
+    --accent:         #2a78d6;
+    --accent-wash:    rgba(42, 120, 214, 0.10);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:where(:not([data-theme="light"])) .viz-root {
+      color-scheme: dark;
+      --surface-1:      #1a1a19;
+      --surface-2:      #232320;
+      --text-primary:   #ffffff;
+      --text-secondary: #c3c2b7;
+      --text-muted:     #8f8d84;
+      --grid:           #35342f;
+      --accent:         #3987e5;
+      --accent-wash:    rgba(57, 135, 229, 0.14);
+    }
+  }
+  :root[data-theme="dark"] .viz-root {
+    color-scheme: dark;
+    --surface-1:      #1a1a19;
+    --surface-2:      #232320;
+    --text-primary:   #ffffff;
+    --text-secondary: #c3c2b7;
+    --text-muted:     #8f8d84;
+    --grid:           #35342f;
+    --accent:         #3987e5;
+    --accent-wash:    rgba(57, 135, 229, 0.14);
+  }
+  * { box-sizing: border-box; }
+  html, body { background: var(--surface-1); margin: 0; }
+  body { font-family: "IBM Plex Sans", -apple-system, sans-serif; }
+  .viz-root { background: var(--surface-1); padding: 44px 52px 40px; max-width: 820px; margin: 0 auto; }
+  h1 { font-size: 23px; font-weight: 650; color: var(--text-primary); margin: 0 0 4px; text-wrap: balance; letter-spacing: -0.01em; }
+  .subtitle { font-size: 13.5px; color: var(--text-secondary); margin: 0 0 6px; font-family: "IBM Plex Mono", ui-monospace, monospace; }
+  .devicenote { font-size: 12px; color: var(--text-muted); margin: 0 0 32px; }
+  svg { overflow: visible; display: block; }
+  .gridline { stroke: var(--grid); stroke-width: 1; }
+  .axislabel { fill: var(--text-muted); font-size: 11px; font-family: "IBM Plex Mono", ui-monospace, monospace; }
+  .line-path { fill: none; stroke: var(--accent); stroke-width: 2.5px; stroke-linejoin: round; stroke-linecap: round; }
+  .area-fill { fill: var(--accent-wash); }
+  .dot { fill: var(--accent); stroke: var(--surface-1); stroke-width: 2.5px; }
+  .valuelabel { fill: var(--text-primary); font-size: 13px; font-weight: 600; font-family: "IBM Plex Mono", ui-monospace, monospace; text-anchor: middle; }
+  .catlabel { fill: var(--text-secondary); font-size: 11.5px; text-anchor: middle; }
+  .catlabel tspan.muted { fill: var(--text-muted); font-size: 10.5px; }
+  .final-tag { fill: var(--accent); font-size: 12px; font-weight: 600; font-family: "IBM Plex Mono", ui-monospace, monospace; }
+</style>
+
+<div class="viz-root">
+  <h1>Geomean speedup, across every stacked, GPU-confirmed change</h1>
+  <p class="subtitle">v_router → v_router2_autotuned.py, TikTok TechJam Track 3</p>
+  <p class="devicenote">All four points measured on one consistent device (RunPod A100-SXM4-80GB) — no hardware changes mixed into this line.</p>
+
+  <svg id="chart" width="720" height="340" viewBox="0 0 720 340">
+    <g id="grid"></g>
+    <g id="plot"></g>
+  </svg>
+</div>
+
+<script>
+(function () {
+  const data = [
+    { label: "v_router", sub: "per-shape dispatch", value: 2.87 },
+    { label: "v_router2", sub: "+ AMP, Triton AddNorm, CUDA graphs", value: 4.85 },
+    { label: "+ T7b + shape 14", sub: "autotune, chunked-amp route", value: 4.88 },
+    { label: "+ shape 13 + reroute", sub: "6-way re-comparison, all shapes", value: 6.46 },
+  ];
+
+  const W = 720, H = 340;
+  const marginL = 46, marginR = 40, marginT = 20, marginB = 62;
+  const plotW = W - marginL - marginR, plotH = H - marginT - marginB;
+  const yMin = 2.3, yMax = 7.0;
+
+  const x = i => marginL + (i / (data.length - 1)) * plotW;
+  const y = v => marginT + plotH - ((v - yMin) / (yMax - yMin)) * plotH;
+
+  const svgNS = "http://www.w3.org/2000/svg";
+  const grid = document.getElementById("grid");
+  const plot = document.getElementById("plot");
+
+  [3, 4, 5, 6, 7].forEach(v => {
+    const yy = y(v);
+    const gl = document.createElementNS(svgNS, "line");
+    gl.setAttribute("class", "gridline");
+    gl.setAttribute("x1", marginL); gl.setAttribute("x2", W - marginR);
+    gl.setAttribute("y1", yy); gl.setAttribute("y2", yy);
+    grid.appendChild(gl);
+    const lbl = document.createElementNS(svgNS, "text");
+    lbl.setAttribute("class", "axislabel");
+    lbl.setAttribute("x", marginL - 10); lbl.setAttribute("y", yy + 4);
+    lbl.setAttribute("text-anchor", "end");
+    lbl.textContent = v + "x";
+    grid.appendChild(lbl);
+  });
+
+  let areaPath = `M ${x(0)} ${marginT + plotH} `;
+  data.forEach((d, i) => { areaPath += `L ${x(i)} ${y(d.value)} `; });
+  areaPath += `L ${x(data.length - 1)} ${marginT + plotH} Z`;
+  const area = document.createElementNS(svgNS, "path");
+  area.setAttribute("class", "area-fill");
+  area.setAttribute("d", areaPath);
+  plot.appendChild(area);
+
+  let linePath = `M ${x(0)} ${y(data[0].value)} `;
+  data.forEach((d, i) => { if (i > 0) linePath += `L ${x(i)} ${y(d.value)} `; });
+  const line = document.createElementNS(svgNS, "path");
+  line.setAttribute("class", "line-path");
+  line.setAttribute("d", linePath);
+  plot.appendChild(line);
+
+  data.forEach((d, i) => {
+    const cx = x(i), cy = y(d.value);
+    const dot = document.createElementNS(svgNS, "circle");
+    dot.setAttribute("class", "dot");
+    dot.setAttribute("cx", cx); dot.setAttribute("cy", cy); dot.setAttribute("r", 5);
+    plot.appendChild(dot);
+
+    const val = document.createElementNS(svgNS, "text");
+    val.setAttribute("class", "valuelabel");
+    val.setAttribute("x", cx); val.setAttribute("y", cy - 14);
+    val.textContent = d.value.toFixed(2) + "x";
+    plot.appendChild(val);
+
+    const cat = document.createElementNS(svgNS, "text");
+    cat.setAttribute("class", "catlabel");
+    const t1 = document.createElementNS(svgNS, "tspan");
+    t1.setAttribute("x", cx); t1.setAttribute("y", marginT + plotH + 22);
+    t1.textContent = d.label;
+    cat.appendChild(t1);
+    const t2 = document.createElementNS(svgNS, "tspan");
+    t2.setAttribute("class", "muted");
+    t2.setAttribute("x", cx); t2.setAttribute("y", marginT + plotH + 36);
+    t2.textContent = d.sub;
+    cat.appendChild(t2);
+    plot.appendChild(cat);
+  });
+
+  const lastIdx = data.length - 1;
+  const tag = document.createElementNS(svgNS, "text");
+  tag.setAttribute("class", "final-tag");
+  tag.setAttribute("x", x(lastIdx) - 30); tag.setAttribute("y", y(data[lastIdx].value) - 30);
+  tag.setAttribute("text-anchor", "end");
+  tag.textContent = "+125% total";
+  plot.appendChild(tag);
+})();
+</script>

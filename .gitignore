@@ -14,3 +14,6 @@ result_*.json
 
 # Research loop scratch (proposals, reviews, run transcripts)
 .research/
+
+# RunPod flash CLI local activity log
+.flash/
