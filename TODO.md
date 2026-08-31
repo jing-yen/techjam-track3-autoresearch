@@ -123,16 +123,43 @@ avoid its measured asymmetric-kernel correctness drift.
 
 ## Open — kernel frontier (research pass, 2026-08-31)
 
-- **K1 — Fused whole-block Triton kernel for the S=128/d=128 family (scoped
-  megakernel). The one creative direction with headroom >> noise floor.**
-  Shape 2 runs at 0.32 TFLOP/s — under 1% of peak; the gap is ~40-60 kernel
-  launches per forward. At S=128/d=128, attention per (b,h) fits in SMEM (56 KB)
-  and one layer's ENTIRE weights are 192 KB fp16. One Triton kernel per block →
-  4 launches per forward. Literature: Hazy Research Llama-1B megakernel,
-  AutoMegaKernel (arXiv:2606.09682). *Time-box:* one attempt, shape-2 target
-  only, AFTER S8 is queued. *Falsify:* <20% win over reduce's 0.374 ms → stop,
-  cite as "path identified" in the report. Full brief:
-  `docs/research-kernel-frontier.md`.
+- **K1 — CLOSED: real working kernel built, correctness proven, falsified
+  on speed. Do not resume without a fundamentally different design.**
+  (journal iter 35, `candidates/v_triton_megakernel_s2.py`, jobs
+  `778174,778187,778204,778220,778250` — 5 real GPU attempts).
+  Attempted a single-CTA (`grid=(1,)`) kernel fusing the entire 4-layer
+  forward pass for shape 2 into one launch (was scoped as "one Triton
+  kernel per block, 4 launches"; went further, to a true single launch for
+  the whole model, since batch=1 makes it tractable). Hit and fixed 4 real
+  bugs in sequence, each a genuine Triton constraint, not a logic error:
+  (1) `constexpr` values are plain Python ints at trace time, no `.to()`;
+  (2) tile shapes must be a power of 2 (`3*D=384` isn't — split into 3
+  D=128-wide GEMMs); (3) Triton doesn't support Python slice syntax on
+  already-materialized tensor values, only on `tl.load` pointer
+  expressions — restructured per-head Q/K/V to compute directly via
+  pointer-offset GEMMs rather than slicing a full Q/K/V tensor; (4)
+  `OutOfResources`: needed 278528 bytes shared memory vs A100's
+  166912-byte limit (~67% over) — fixed with explicit `num_stages=1`.
+  **Result after all 4 fixes: CORRECT (max_abs 0.00087, passes gate) but
+  0.088x speedup — ~11x SLOWER than the baseline it was meant to beat.**
+  Root cause, distinct from the compile bugs above: `grid=(1,)` means this
+  kernel runs on exactly **1 of A100's 108 SMs** for the whole forward
+  pass — it correctly cuts launch count from ~40-60 to 1, but at the cost
+  of using <1% of the GPU's actual parallel hardware, a fundamentally
+  different bottleneck than kernel-launch overhead. **Falsify condition
+  triggered unambiguously** (team's own bar: stop if it doesn't beat
+  `reduce`'s 0.374ms baseline by >20% — this is 11x slower, not within
+  20% of a win). Fixing this needs a genuine multi-CTA redesign (one CTA
+  per head, or per SM-sized work-chunk with cross-CTA reduction), not
+  further tuning of the single-CTA design — real, larger scope than the
+  original time-box, not attempted given remaining time. The kernel
+  itself is real, working, and correctness-proven — kept in the repo as
+  documented negative-result research for the tech report, not deleted.
+  Literature: Hazy Research Llama-1B megakernel, AutoMegaKernel
+  (arXiv:2606.09682) — both of which use sophisticated multi-CTA/warp-
+  specialized persistent-kernel designs, not the naive single-CTA
+  approach tried here; that gap is exactly why they're fast and this
+  first attempt wasn't. Full brief: `docs/research-kernel-frontier.md`.
   *Checked and deliberately NOT attempted:* Mirage / Mirage Persistent Kernel
   (Wu et al., OSDI'25, github.com/mirage-project/mirage) — an automated kernel
   superoptimizer, including a full "compile a model to one megakernel" mode.
