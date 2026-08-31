@@ -112,7 +112,7 @@ if _HAS_TRITON:
         xm = x - mean[:, None]
         var = tl.sum(xm * xm, axis=1) / D
         rstd = 1.0 / tl.sqrt(var + eps)
-        x_norm = xm * rstd
+        x_norm = xm * rstd[:, None]
 
         ln_w = tl.load(ln_w_ptr + d_idx).to(tl.float32)
         ln_b = tl.load(ln_b_ptr + d_idx).to(tl.float32)

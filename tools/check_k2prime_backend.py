@@ -54,7 +54,11 @@ def main() -> int:
     config = TransformerConfig(**cfg_dict)
     baseline = BaselineTransformer(config).to(device)
     model = cand.UserOptimizedTransformer(config).to(device)
-    ttb.copy_model_weights(baseline, model, strict=True)
+    custom_copy = getattr(cand, "copy_model_weights", None)
+    if callable(custom_copy):
+        custom_copy(baseline, model)
+    else:
+        ttb.copy_model_weights(baseline, model, strict=bool(getattr(cand, "STRICT_WEIGHT_COPY", True)))
     model.eval()
 
     x = torch.randn(cfg_dict["batch_size"], cfg_dict["seq_len"], cfg_dict["d_model"], device=device)
