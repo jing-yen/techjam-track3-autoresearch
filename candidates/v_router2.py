@@ -516,6 +516,111 @@ class _FusedTransformer(BaselineTransformer):
         return x
 
 
+# --------------------------------------------------------------------------- #
+# T17 + CUDA graph: fused-QKV attention (unmodified _FusedAttention above) +
+# T7/T15's AddNorm kernel at both boundaries + manual CUDA graph capture.
+#
+# Profiler evidence (journal iter 48-52) showed the AddNorm fusion alone
+# regressed shapes #9/#10/#12 by ~30%: genuinely less GPU compute (confirmed
+# via a real trace, not inferred) but more CPU-side Triton-launch dispatch
+# overhead than these low-compute shapes have concurrent GPU work to hide it
+# behind (shape #11's big attention GEMM does have enough, and improved even
+# without the graph). CUDA graph capture -- the same mechanism
+# torch.compile(mode="reduce-overhead") already gets automatically for
+# compile/reduce elsewhere in this file -- eliminates that per-launch
+# dispatch cost by replaying a pre-recorded kernel sequence with one cheap
+# call. Confirmed on real GPU (job 779394): #9 +59.1%, #10 +59.3%, #11
+# +18.0%, #12 +244.5% vs the plain fused route, 13/13 correct.
+#
+# Capture is scoped to the no-padding case only (see _FusedBlockAddNorm2's
+# transformer below) -- a captured graph is a fixed op sequence, so a
+# padded call always falls back to the unrestricted eager path instead of
+# risking a wrong control-flow branch replaying. Verified separately on
+# real GPU at --padding-ratio 0.3 (job 779394, result_padding.json): 4/4
+# correct, real (smaller, expected) speedups on the fallback path too.
+# --------------------------------------------------------------------------- #
+class _FusedBlockAddNorm2(nn.Module):
+    """Like _FusedBlock, but returns (post_ffn_residual, ffn_delta)
+    UNCOMBINED -- the caller fuses their add with the NEXT norm (T15's
+    cross-layer-chaining pattern, reused verbatim)."""
+
+    def __init__(self, d_model, num_heads, ffn_dim):
+        super().__init__()
+        self.norm1 = nn.LayerNorm(d_model)
+        self.attention = _FusedAttention(d_model, num_heads)
+        self.norm2 = nn.LayerNorm(d_model)
+        self.ffn_in = nn.Linear(d_model, ffn_dim)
+        self.ffn_out = nn.Linear(ffn_dim, d_model)
+
+    def forward(self, x, normed1, valid_token_mask, causal):
+        attn_out = self.attention(normed1, valid_token_mask, causal)
+        normed2, x = fused_add_layernorm(
+            x, attn_out, self.norm2.weight, self.norm2.bias, self.norm2.eps)
+        ffn_out = self.ffn_out(F.gelu(self.ffn_in(normed2), approximate="none"))
+        return x, ffn_out
+
+
+class _FusedTransformerCudaGraph(BaselineTransformer):
+    def __init__(self, config: TransformerConfig) -> None:
+        super().__init__(config)
+        opt_layers = nn.ModuleList()
+        for base_block in self.layers:
+            blk = _FusedBlockAddNorm2(config.d_model, config.num_heads, config.ffn_dim)
+            blk.norm1 = base_block.norm1
+            blk.norm2 = base_block.norm2
+            blk.ffn_in = base_block.ffn_in
+            blk.ffn_out = base_block.ffn_out
+            blk.attention.out_proj = base_block.attention.out_proj
+            opt_layers.append(blk)
+        self.layers = opt_layers
+        self._graph = None
+        self._static_x = None
+        self._static_out = None
+
+    def _forward_impl(self, x, eff_mask):
+        causal = self.config.causal
+        n0 = self.layers[0].norm1
+        normed1 = F.layer_norm(x, (x.shape[-1],), n0.weight, n0.bias, n0.eps)
+
+        out = x
+        for i, layer in enumerate(self.layers):
+            x, ffn_delta = layer(x, normed1, eff_mask, causal)
+            if i + 1 < len(self.layers):
+                next_norm1 = self.layers[i + 1].norm1
+                normed1, x = fused_add_layernorm(
+                    x, ffn_delta, next_norm1.weight, next_norm1.bias, next_norm1.eps)
+            else:
+                out, x = fused_add_layernorm(
+                    x, ffn_delta, self.final_norm.weight, self.final_norm.bias, self.final_norm.eps)
+        return out
+
+    def forward(self, x, valid_token_mask=None):
+        eff_mask = _effective_mask(self, valid_token_mask)
+
+        if x.is_cuda and eff_mask is None:
+            if self._graph is None:
+                self._static_x = x.clone()
+                s = torch.cuda.Stream()
+                s.wait_stream(torch.cuda.current_stream())
+                with torch.cuda.stream(s):
+                    for _ in range(3):
+                        self._forward_impl(self._static_x, None)
+                torch.cuda.current_stream().wait_stream(s)
+
+                self._graph = torch.cuda.CUDAGraph()
+                with torch.cuda.graph(self._graph):
+                    self._static_out = self._forward_impl(self._static_x, None)
+
+            self._static_x.copy_(x)
+            self._graph.replay()
+            return self._static_out
+
+        out = self._forward_impl(x, eff_mask)
+        if eff_mask is not None:
+            out = out.masked_fill(~valid_token_mask[..., None], 0)
+        return out
+
+
 def _fused_copy(baseline, optimized) -> None:
     b = baseline.state_dict()
     target = optimized.state_dict()
@@ -544,6 +649,7 @@ _IMPLS = {
     "compile": _CompileTransformer,
     "reduce": _ReduceOverheadTransformer,
     "fused": _FusedTransformer,
+    "fusedcg": _FusedTransformerCudaGraph,
 }
 
 # (batch_size, seq_len, d_model, num_heads) -> best-known implementation.
@@ -558,22 +664,21 @@ _ROUTE = {
     (10000, 128, 128, 4): "amp",     # shape 6  -- A100-40: 2.79x vs reduce 2.38x, fused 1.92x (S4)
     (64, 128, 32, 4):    "compile",  # shape 7  -- 3.59x vs reduce 2.79x, best 1.93x, fused 1.99x
     (64, 128, 1024, 4):  "amp",      # shape 8  -- 1.14x vs best 1.09x, compile 1.09x, reduce 1.09x
-    (64, 128, 128, 1):   "fused",    # shape 9  -- reverted (iter 21): reduce looked good isolated (3.65x)
-                                      # but underperformed fused (2.09x) inside the full 13-shape sweep
-                                      # (1.81x) -- likely cudagraph/compile-cache interaction between the
-                                      # 5 shapes that now compile "reduce" in the same process. Route
-                                      # decisions must be validated in the full sweep, not pairwise.
-    (64, 128, 128, 2):   "fused",    # shape 10 -- same revert, same reason (isolated 3.98x, in-sweep 2.01x
-                                      # vs fused's in-sweep 2.33x)
-    (64, 128, 128, 16):  "fused",    # shape 11 -- 2.73x vs best 2.45x, compile 2.40x, reduce 2.39x
-    (64, 32, 128, 4):    "fused",    # shape 12 -- 2.36x vs best 2.21x, compile 1.91x, reduce 1.94x
-    (64, 1024, 128, 4):  "amp",      # shape 13 -- 4.42x vs best 4.16x, compile 4.14x, reduce 4.15x
+    (64, 128, 128, 1):   "fusedcg",  # shape 9  -- T17+cudagraph (job 779394): 3.55x vs plain fused's
+                                      # 2.23x in the router (+59.1%). Real, profiler-motivated: AddNorm
+                                      # fusion alone regressed this shape ~30% (less GPU work, but more
+                                      # CPU-side Triton-launch dispatch than the GPU has concurrent work
+                                      # to hide behind); CUDA graph capture removes that dispatch cost
+                                      # entirely by replaying a captured kernel sequence. See TODO.md T17.
+    (64, 128, 128, 2):   "fusedcg",  # shape 10 -- 3.93x vs fused's 2.47x (+59.3%), same mechanism.
+    (64, 128, 128, 16):  "fusedcg",  # shape 11 -- 3.52x vs fused's 2.98x (+18.0%).
+    (64, 32, 128, 4):    "fusedcg",  # shape 12 -- 8.50x vs fused's 2.47x (+244.5%).
 }
 _FALLBACK = "compile"
 
 
 def copy_model_weights(baseline, optimized: "UserOptimizedTransformer") -> None:
-    if optimized._impl_name == "fused":
+    if optimized._impl_name in ("fused", "fusedcg"):
         _fused_copy(baseline, optimized._impl)
     else:
         import torch_transformer_benchmark as ttb
