@@ -495,32 +495,39 @@ because three of the four are **not** the same problem:
   call) is real and verified via source, but fixing it doesn't clearly pay
   off given the whole 17% wasn't weight-cast to begin with.
 
-- **T17 — CLOSED again after the fix, still a real (smaller) negative
-  result. Do not integrate.** `candidates/v_triton_addnorm_fused.py`:
-  applied T7+T15's proven AddNorm fusion (both boundaries) to the `fused`
-  route, which had none. First test (job 778892): large regression, #9
-  -30.2%, #10 -29.9%, #12 -30.5%. Root-caused via real profiler data
-  (`tools/profile_t17_regression.py`, job 778957, not the wrong
-  `.contiguous()` guess originally written here): T17's raw CUDA time on
-  shape #9 was actually LOWER than the current route (15.79ms vs
-  18.54ms — the fusion itself is genuinely faster), but `forward()`
-  called `bool(valid_token_mask.all())` directly instead of
-  `v_router2.py`'s `_effective_mask()` (B10's cache), causing a real
-  per-forward GPU→CPU sync. Fixed, retested (job 779035, **13/13
-  correct**): the fix helped — shape 11 improved further (+3.8%→+11.8%),
-  shapes 9/10/12 improved modestly (**-30.2%→-27.9%, -29.9%→-27.5%,
-  -30.5%→-27.6%**) — but the core regression on those three shapes
-  barely moved. **The mask-cache bug was real and worth fixing, but was
-  NOT the primary cause of the regression — something else, still
-  undiagnosed, dominates.** Given the fix only recovered ~2-3 points of a
-  30-point gap, and two profiler passes plus a persistent-kernel
-  redesign (K1a-persistent, tested on its own merits, also failed) have
-  already gone into this thread, **stopping here** — diminishing returns
-  against a confirmed, working T15 already on the leaderboard. Do not
-  integrate T17. If anyone picks this up again: the mask-cache fix and
-  the profiler trace are both real, reusable groundwork — the remaining
-  gap needs a fresh profiler comparison of the FIXED T17 against the
-  current route, not another guess.
+- **T17 — DONE, LANDED, NEW LEADERBOARD BEST.** Full arc: applied T7+T15's
+  proven AddNorm fusion (both boundaries) to the `fused` route (shapes
+  #9/#10/#11/#12), which had none. First test (job 778892): large
+  regression, #9 -30.2%, #10 -29.9%, #12 -30.5%, despite the fusion's raw
+  GPU compute time being genuinely LOWER (confirmed via real profiler
+  data, `tools/profile_t17_regression.py`, job 778957 — not the wrong
+  `.contiguous()` guess originally written here). Root-caused in two more
+  passes: (1) a missing `_effective_mask()` reuse (B10's cache) causing a
+  real per-forward GPU→CPU sync — fixed, but only recovered ~2-3 of the
+  ~30 points (job 779035); (2) comparing that regressed shape against
+  the ONE shape that improved (#11, job 779094 vs 779098) revealed the
+  real mechanism: CPU-side Triton-launch dispatch overhead exceeding the
+  concurrent GPU work available to hide it behind on low-compute shapes
+  — shape #11's big attention GEMM hides it, #9/#10/#12 don't have enough
+  work to. **Fix: manual CUDA graph capture** of the whole forward pass
+  (the same mechanism `torch.compile(mode="reduce-overhead")` already
+  gets automatically for `compile`/`reduce` elsewhere in this file) —
+  eliminates per-launch dispatch cost entirely by replaying a pre-recorded
+  kernel sequence. **Standalone confirmation (job 779394): #9 +59.1%, #10
+  +59.3%, #11 +18.0%, #12 +244.5% vs plain `fused`, 13/13 correct.**
+  Integrated into `v_router2.py` as a new `fusedcg` route
+  (`_FusedBlockAddNorm2`/`_FusedTransformerCudaGraph`, reusing the
+  existing `_FusedAttention` and `fused_add_layernorm` unchanged), shapes
+  9-12 rewired from `fused`. **Full-sweep confirmation (job 779413): 13/13
+  correct, worst max_abs unchanged (0.00176). Median 2.98x→3.71x
+  (+24.6%), geomean 3.81x→4.02x (+5.4%).** Per-shape: #9 +51.4%, #10
+  +50.4%, #11 +14.2%, #12 +216.6% — matches the standalone confirmation
+  closely. Capture is scoped to the no-padding case only (a captured CUDA
+  graph is a fixed op sequence); padded calls fall back to the
+  always-correct eager path, separately verified at `--padding-ratio 0.3`
+  (4/4 correct, both standalone and in the router). `leaderboard.md`
+  updated per the guarded-update procedure (pulled, re-checked, still
+  strictly better on both median and geomean).
 
 - **K1a-persistent — CLOSED, real negative result, worse than non-persistent
   K1a.** `candidates/v_triton_k1a_persistent.py`: same fused FFN-block

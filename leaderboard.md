@@ -5,15 +5,15 @@ replace only if strictly better).
 
 | field | value |
 |--|--|
-| best candidate | `candidates/v_router2.py` (T5 dispatch + B10 mask-cache + T6 AMP on 6/8/13 + T7+T15 Triton AddNorm on both residual+norm boundaries, best/amp routes) |
+| best candidate | `candidates/v_router2.py` (T5 dispatch + B10 mask-cache + T6 AMP on 6/8/13 + T7+T15 Triton AddNorm on best/amp routes + T17 AddNorm+CUDA-graph on the fused route, shapes 9-12) |
 | node_id | `v_router2` |
 | correctness | ✅ A100-80, `official-safe` (13/13 shapes incl. shape 6), float32, TF32 **on** (organizer default) for non-compile routes — worst max_abs 0.00176 (shape 8), atol 0.002 |
-| median speedup | **2.98x** |
-| geomean speedup | **3.81x** |
+| median speedup | **3.71x** |
+| geomean speedup | **4.02x** |
 | dtype | float32 base, with `torch.autocast(fp16)` on shapes #6/#8/#13 specifically (T6) |
 | device | NUS SoC cluster, A100-80 PCIe (`gpu:a100-80:1`) |
 | protocol | official — warmup=20, repeats=100, rounds=3, alternating baseline/optimized order; candidate loaded once per sweep (B8+B9) |
-| updated by | opus-1 (iter 42, job `router2_t15_confirm`, 778709) |
+| updated by | opus-1 (iter 52, job `router2_t17_confirm`, 779413) |
 
 **On top of S1's TF32 disclosure below:** `v_router2` adds four more
 confirmed improvements over the S1-era `v_router`:
@@ -56,6 +56,30 @@ confirmed improvements over the S1-era `v_router`:
   median is dominated by the 10 untouched compile/reduce/fused shapes,
   where this change has zero effect by construction, so it doesn't move
   much even though the 3 shapes it *does* touch clearly improved.
+- **T17** (T7+T15's AddNorm kernel applied to the `fused` route, shapes
+  #9/#10/#11/#12, which had zero fusion at all — plus manual CUDA graph
+  capture of the whole forward pass). First attempt (the AddNorm fusion
+  alone, no graph) regressed 3 of 4 targeted shapes by ~30% despite
+  genuinely *lower* measured GPU compute time everywhere — root-caused via
+  two real profiler comparisons (a regressed shape vs. the current route,
+  then that regressed shape vs. the one shape that improved) to CPU-side
+  Triton-launch dispatch overhead exceeding the concurrent GPU work
+  available to hide it behind on these low-compute shapes. Manual CUDA
+  graph capture (the same mechanism `torch.compile(mode="reduce-overhead")`
+  already gets automatically elsewhere in this file) eliminates that
+  dispatch cost entirely by replaying a pre-recorded kernel sequence.
+  **Confirmed on the full 13-shape sweep (job `779413`): 13/13 correct,
+  worst max_abs unchanged (0.00176).** All four targeted shapes improved
+  sharply: #9 2.23x→3.38x (+51.4%), #10 2.47x→3.71x (+50.4%), #11
+  3.00x→3.40x (+14.2%), #12 2.47x→7.81x (+216.6%) — none of it noise, all
+  far above the measured per-shape noise floor. **Aggregate: median
+  2.98x→3.71x (+24.6%), geomean 3.81x→4.02x (+5.4%)** — unlike T15, this
+  time the median genuinely moves too, since T17 touches 4 of 13 shapes
+  (not 3) including the two smallest/fastest ones (#9, #10), which the
+  median is more sensitive to. Capture is scoped to the no-padding case
+  only (a captured CUDA graph is a fixed op sequence); a padded call falls
+  back to the always-correct eager path, verified separately at
+  `--padding-ratio 0.3` (4/4 correct).
 - **S2 attempted-and-reverted** (see journal iter 20-21): routing shapes
   #9/#10 to `reduce` looked good isolated (3.65x/3.98x) but *regressed*
   inside the full sweep (1.81x/2.01x, worse than `fused`'s in-sweep
