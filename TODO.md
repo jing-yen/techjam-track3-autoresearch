@@ -150,30 +150,26 @@ layer), stays two separate ops. This is real, unaddressed, and — unlike
 K2'/T10's marginal ~2% GELU opportunities — a full **19%** of one shape's
 CUDA time, using a kernel T7 already proved correct rather than a new one.
 
-- **T15 — NEW, built and dispatched.** `candidates/v_triton_addnorm2.py`:
-  extends T7's fused AddNorm kernel (unmodified, byte-identical to
-  `v_triton_addnorm.py`'s) to the second boundary. Since that boundary now
-  spans a LAYER, not a block, the per-block interface changes: each block
-  returns the raw post-attention-fused residual and the raw FFN delta
-  uncombined; the transformer-level loop calls `fused_add_layernorm`
-  between blocks (producing the next block's `norm1` input) and once more
-  after the last block (producing `final_norm`'s output directly). Layer
-  0's `norm1` has no preceding fusable add and stays a plain
-  `F.layer_norm`, same as T7 already does at its own first norm1.
-  **Padding handled by deliberately NOT threading a mask through the
-  fused kernel** — mirrors T7's own already-validated approach (T7 doesn't
-  mask between its attn-add and norm2 either): `valid_token_mask` only
-  ever affects attention's key-masking and the final output's
-  `masked_fill`, and since every op besides attention is strictly
-  row-wise, a padded row's un-zeroed intermediate value cannot influence
-  any valid row's output at any point. Argued explicitly in the file's own
-  docstring, and — because this is a new fusion, not just a re-use of
-  T7's exact validated pattern — tested empirically here too:
-  CPU-fallback correctness holds at `--padding-ratio 0.3` as well as the
-  padding-free default. GPU correctness+speed dispatched on all 13
-  official-safe shapes, expecting the biggest win on #13-shaped (long
-  S) and generally long-sequence entries in the `best`/`amp` route family
-  where this boundary was measured to matter most.
+- **T15 — DONE, LANDED, NEW LEADERBOARD BEST.** `candidates/v_triton_addnorm2.py`
+  (standalone validation) + integrated into `candidates/v_router2.py` as
+  `_BestBlockTriton2`/`_BestTransformer2`, wired to `_AMPTransformer` only
+  (shapes #6/#8/#13 — the only route this touches). Extends T7's fused
+  AddNorm kernel (unmodified, byte-identical) to the second residual+norm
+  boundary: `ffn_out`-add fused into the *next* layer's `norm1`, or into
+  `final_norm` for the last layer (T7 only covered attn-out-add into
+  `norm2`). Padding handled by deliberately NOT threading a mask through
+  the fused kernel — mirrors T7's own already-validated approach — argued
+  in the file's docstring AND tested empirically at `--padding-ratio 0.3`
+  (not just assumed, since this is a new fusion, not a reuse of T7's exact
+  validated pattern). **Confirmed on real GPU, full 13-shape sweep (job
+  `778709`, journal iter 42): 13/13 correct, worst max_abs 0.00176
+  (unchanged from before). Geomean 3.69x → 3.81x (+3.3%).** All three
+  amp-routed shapes improved individually, well above the ±2.7% noise
+  floor (S8): #6 +17.2%, #8 +4.2%, #13 +12.5% — matches M2's prediction
+  exactly (shape 13 had the biggest measured unfused-boundary cost).
+  Median barely moved (2.99x→2.98x, inside noise — dominated by the 10
+  untouched compile/reduce/fused shapes). **`leaderboard.md` updated**
+  per the guarded-update procedure (pulled, re-checked, still improving).
 
 ## K4 — CLOSED: real mechanism found, but it lands in warmup, not the timed
 loop, so it does NOT explain S2 (which remains genuinely open)

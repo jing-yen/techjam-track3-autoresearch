@@ -5,15 +5,15 @@ replace only if strictly better).
 
 | field | value |
 |--|--|
-| best candidate | `candidates/v_router2.py` (T5 dispatch + B10 mask-cache + T6 AMP on 6/8/13 + T7 Triton AddNorm on best/amp routes) |
+| best candidate | `candidates/v_router2.py` (T5 dispatch + B10 mask-cache + T6 AMP on 6/8/13 + T7+T15 Triton AddNorm on both residual+norm boundaries, best/amp routes) |
 | node_id | `v_router2` |
 | correctness | ✅ A100-80, `official-safe` (13/13 shapes incl. shape 6), float32, TF32 **on** (organizer default) for non-compile routes — worst max_abs 0.00176 (shape 8), atol 0.002 |
-| median speedup | **2.99x** |
-| geomean speedup | **3.72x** |
+| median speedup | **2.98x** |
+| geomean speedup | **3.81x** |
 | dtype | float32 base, with `torch.autocast(fp16)` on shapes #6/#8/#13 specifically (T6) |
 | device | NUS SoC cluster, A100-80 PCIe (`gpu:a100-80:1`) |
 | protocol | official — warmup=20, repeats=100, rounds=3, alternating baseline/optimized order; candidate loaded once per sweep (B8+B9) |
-| updated by | opus-1 (iter 30, job `router2_triton_confirm2`) |
+| updated by | opus-1 (iter 42, job `router2_t15_confirm`, 778709) |
 
 **On top of S1's TF32 disclosure below:** `v_router2` adds four more
 confirmed improvements over the S1-era `v_router`:
@@ -38,6 +38,24 @@ confirmed improvements over the S1-era `v_router`:
   legitimate official-protocol number, but most of the *delta* from
   2.89x/3.58x should be read as measurement noise plus a real, smaller
   Triton contribution — not purely the latter.
+- **T15** (extends T7's fused AddNorm to the SECOND residual+norm boundary
+  — `ffn_out`-add fused into the *next* layer's `norm1`, or into
+  `final_norm` for the last layer; T7 only covered the first boundary,
+  attn-out-add into `norm2`). Motivated by a real profiler trace (M2,
+  `tools/profile_shapes.py`, shape #13): the unfused boundary was **19.21%**
+  of total CUDA time — bigger than T7's own already-fused kernel sitting
+  right next to it (9.57%). Reuses T7's exact kernel unmodified; only the
+  block/transformer wiring changes so the fusion can span a layer boundary.
+  Confirmed on the full 13-shape sweep (job `778709`): all three amp-routed
+  shapes improved individually — #6 3.29x→3.86x (+17.2%), #8 1.74x→1.81x
+  (+4.2%), #13 11.66x→13.12x (+12.5%) — well above the established ±2.7%
+  per-shape noise floor (S8), so this is real signal, not noise. Aggregate
+  geomean 3.69x→3.81x (+3.3%). *Caveat, stated as plainly as T7's own landing
+  note did:* the aggregate **median** barely moved (2.99x→2.98x, a -0.1%
+  difference — inside the noise floor, read as a tie, not a regression) —
+  median is dominated by the 10 untouched compile/reduce/fused shapes,
+  where this change has zero effect by construction, so it doesn't move
+  much even though the 3 shapes it *does* touch clearly improved.
 - **S2 attempted-and-reverted** (see journal iter 20-21): routing shapes
   #9/#10 to `reduce` looked good isolated (3.65x/3.98x) but *regressed*
   inside the full sweep (1.81x/2.01x, worse than `fused`'s in-sweep
