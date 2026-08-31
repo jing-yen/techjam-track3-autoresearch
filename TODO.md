@@ -606,11 +606,33 @@ because three of the four are **not** the same problem:
   requirement, not a performance choice. This is a correct, working first
   cut, not a tuned kernel — see T7b below.
 
-- **S8 — CLAIMED (opus-1), dispatched.** Job `778942` runs two more
-  official-protocol sweeps of the CURRENT champion (`v_router2.py`, now
-  with T15 landed — supersedes the T7-era framing below, same measurement
-  need) plus S9's seed check in the same job, on a healthy node
-  (`xgpj0` excluded). Results pending.
+- **S8 — DONE, real measured error bar, and it REFINES (not invalidates)
+  the earlier ±2.7% estimate: noise is highly shape/route-dependent, not
+  flat.** Job `778942`, two back-to-back official-protocol sweeps of the
+  current champion (`v_router2.py`, T15-landed), zero code changes
+  between them. **Aggregate: geomean 3.771x→3.895x (+3.3%), median
+  2.988x→3.089x (+3.4%)** — genuinely comparable in size to T15's own
+  claimed aggregate geomean delta (+3.3%), so the AGGREGATE number alone
+  cannot be cleanly separated from run-to-run noise, full stop. **But
+  per-shape, the noise is wildly non-uniform, not the flat ±2.7% the
+  original S7/S8 framing (below) implied from one data point (shape 7):
+  shape 1 (`compile` route) swung +35.7%** between two IDENTICAL runs —
+  a bigger single-shape swing than anything seen before in this project —
+  while **every amp-routed shape (#6/#8/#13 — the ONLY shapes T15
+  actually touches) swung under 0.5%** (#6 -0.04%, #8 +0.4%, #13 +0.2%).
+  compile/fused-routed shapes sit in between (shape 7 +4.8%, shape 11
+  +3.4%). **Conclusion for the report:** T15's PER-SHAPE claims (#6
+  +17.2%, #8 +4.2%, #13 +12.5%) are now even more solidly confirmed —
+  measured against these shapes' ACTUAL noise (<0.5%), not the old
+  ±2.7% estimate, they're 10-30x above their real noise floor. The
+  AGGREGATE geomean/median numbers, however, should be reported as
+  "legitimate official-protocol numbers" (as T7's own landing note
+  already said) without claiming the aggregate DELTA itself is
+  necessarily signal — it's genuinely comparable to one run's own
+  variance, driven almost entirely by `compile`-routed shapes T15 never
+  touched. Root cause of `compile`'s high variance not chased further
+  here — plausibly connects to K4's recompilation/cudagraph-checkpoint
+  findings, but that's a different investigation.
 - **S8 (original framing) — HIGHER PRIORITY THAN T7b/T9 BELOW: measure the run-to-run
   error bar before claiming any more gains.** (per `docs/research-batch3.md`,
   S7). A sharp finding: the claimed T7 gain (2.89x→2.99x, +3.9% geomean) is
@@ -627,8 +649,13 @@ because three of the four are **not** the same problem:
   number), but do not narrate "Triton bought us +3.9%" without this
   error bar to back it up.
 
-- **S9 — CLAIMED (opus-1), dispatched alongside S8 in job `778942`**
-  (seeds 2001, 3002 on shape #8, current champion). Results pending.
+- **S9 — DONE, correctness holds across seeds.** Job `778942`, shape #8
+  (current champion, T15-landed) at seeds 2001 and 3002: **max_abs
+  0.00165 and 0.00160 respectively** — both comfortably under the 0.002
+  tolerance (82%/80% of budget), close in magnitude to the default-seed
+  run's 0.00176 (88%). Not a lucky single-seed pass; the error composition
+  (fp32 SDPA + Triton AddNorm ×2 boundaries + fp16 autocast) is stable
+  across at least 3 independent seeds. Defensible claim for the report.
 - **S9 (original framing) — cheap, same priority tier as S8: seed-robustness check on
   shape #8.** (`docs/research-batch3.md`, S7). Three independent error
   sources now stack on shape #8's `amp` route: fp32 SDPA (~1e-6) → Triton

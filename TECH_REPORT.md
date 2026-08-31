@@ -210,14 +210,27 @@ unmodified `torch_transformer_benchmark.py`. Our harness reuses that script's ow
 (§3), so the code path is shared rather than reimplemented, but a shared code
 path is not the same evidence as an independent run. We record this as a gap.
 
-**Run-to-run variance, disclosed honestly.** Comparing this sweep against the
-prior confirmed run (iter 21, same route table for `compile`/`reduce`/`fused`,
-zero code changes there), those unrelated routes swung by up to -30%
-(shape 7: 5.85x → 4.08x) — real cluster/protocol measurement noise. Most of
-the aggregate's improvement over iter 21 (2.89x/3.58x) is genuinely
-attributable to T7 on the shapes it touches (§4's per-shape breakdown), but
-some of the shape-by-shape movement elsewhere in this table should be read
-as noise, not signal.
+**Run-to-run variance, measured directly (not just inferred).** Rather than
+lean only on cross-iteration comparisons, we ran the current champion twice
+back-to-back with zero code changes (job `778942`, journal iter 49) to get a
+real error bar. **Aggregate geomean moved +3.3% (3.771x→3.895x), median
++3.4%** between two identical runs — genuinely comparable in size to T15's
+own claimed aggregate delta, so the aggregate number alone should be read as
+"a legitimate official-protocol number," not as proof the aggregate *delta*
+is signal rather than noise. But per-shape, that noise is highly
+non-uniform, not flat: **shape 1 (`compile` route) swung +35.7%** between
+the two identical runs — the largest single-shape swing measured in this
+project — while **every `amp`-routed shape (#6/#8/#13 — the only shapes T15
+touches) swung under 0.5%** (#6 −0.04%, #8 +0.4%, #13 +0.2%). Measured
+against that real, shape-specific noise floor, T15's per-shape gains (#6
++17.2%, #8 +4.2%, #13 +12.5%) are 10-30x above noise — solidly signal, not
+the aggregate coincidence a flatter noise estimate might suggest. The
+earlier cross-iteration comparison (iter 21→30, T7's landing: shape 7 swung
+-30%, 5.85x→4.08x) is consistent with this — `compile`-routed shapes carry
+real, large run-to-run variance unrelated to any candidate change; `amp`-
+routed shapes do not. A seed-robustness check (S9, same job) confirms shape
+8's correctness is stable across seeds too (max_abs 0.00165/0.00160 at two
+extra seeds, vs 0.00176 at the default), not a lucky single-seed pass.
 
 ---
 
