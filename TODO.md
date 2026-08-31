@@ -250,7 +250,37 @@ because three of the four are **not** the same problem:
   requirement, not a performance choice. This is a correct, working first
   cut, not a tuned kernel — see T7b below.
 
-- **T7b — OPEN: autotune the T7 AddNorm kernel.** Same textbook next step
+- **S8 — OPEN, HIGHER PRIORITY THAN T7b/T9 BELOW: measure the run-to-run
+  error bar before claiming any more gains.** (per `docs/research-batch3.md`,
+  S7). A sharp finding: the claimed T7 gain (2.89x→2.99x, +3.9% geomean) is
+  likely **smaller than the cluster's own run-to-run noise**. One untouched
+  route (zero code changes) swung -30% between two confirmed runs of the
+  same candidate (shape 7: 5.85x→4.08x) — on a 13-shape geomean, one such
+  swing alone is worth ±2.7%. The honestly Triton-attributable gain (AMP
+  routes only) is ~+1.6% — smaller than that noise band. **Action:** re-run
+  the current champion (`v_router2.py`, unchanged) twice more on
+  `official-safe`. Two extra sweeps convert "we suspect ±30% variance" into
+  a measured error bar — worth more to Technical Execution than another
+  0.1x, and settles whether T7's contribution is real or noise.
+  *For the report:* quote 2.99x/3.72x (legitimate official-protocol
+  number), but do not narrate "Triton bought us +3.9%" without this
+  error bar to back it up.
+
+- **S9 — OPEN, cheap, same priority tier as S8: seed-robustness check on
+  shape #8.** (`docs/research-batch3.md`, S7). Three independent error
+  sources now stack on shape #8's `amp` route: fp32 SDPA (~1e-6) → Triton
+  AddNorm (0.0006-0.0013) → fp16 autocast (0.00176) — **88% of the 0.002
+  absolute tolerance**, on a single fixed seed. This is *not* a near-miss
+  (the gate is per-element `abs<=0.002` **OR** `rel<=0.02`,
+  `torch_transformer_benchmark.py:314-316` — a 0.00176 element passes
+  comfortably on the relative arm unless `|ref|` is tiny), but it's a
+  trend worth checking before judging does. **Action:** re-run shape #8
+  with 2-3 different `--seed` values. If correctness holds across seeds,
+  that's a strong, defensible claim for the report; if not, better to
+  find out now.
+
+- **T7b — OPEN, LOWER PRIORITY than S8/S9 above (targets a gain smaller
+  than the documented noise floor — do S8/S9 first).** Same textbook next step
   Triton's own tutorials use for exactly this kernel shape (a reduction +
   elementwise kernel): wrap `_fused_add_layernorm_kernel` with
   `@triton.autotune(configs=[...], key=["n_cols"])`, sweeping a small grid
@@ -266,7 +296,9 @@ because three of the four are **not** the same problem:
   *Falsify:* autotuned config matches the current default → no gain, close
   it and say so plainly rather than re-running until something moves.
 
-- **T9 — OPEN, scope genuinely uncertain, consider asking the organizers.**
+- **T9 — OPEN, LOWER PRIORITY than S8/S9 above (same reason — see
+  `docs/research-batch3.md` S7), scope genuinely uncertain, consider asking
+  the organizers.**
   Would calling a standalone SOTA kernel library (flash-attn's own PyPI
   package, xFormers' `memory_efficient_attention`) directly, rather than
   through PyTorch's SDPA dispatcher, be in scope? Checked the actual
@@ -297,6 +329,77 @@ because three of the four are **not** the same problem:
   point to either way.
 - **T2, T3 — superseded.** Both landed as `v_compile.py` / `v_fused_qkv.py` and
   are now route targets inside `v_router.py`.
+
+- **M2 — OPEN, do this before adding more kernel candidates blind.** No
+  step in this project's actual measurement stack — not `bench_harness.py`,
+  not `autoresearch.workflow.js`'s strategist/coder/runner/postmortem loop
+  — has ever used `torch.profiler`, Nsight, or any per-op trace. Every
+  bottleneck claim so far (including this session's own Roofline estimates
+  for shape #8) is derived from `opt_ms` + a GFLOP count, never a measured
+  breakdown of where time inside one forward pass actually goes (norm vs
+  attention vs FFN vs launch/dispatch overhead vs mask construction).
+  `torch.profiler` ships with PyTorch, needs no install, and can export a
+  Chrome-trace or a table of per-op CUDA time with one `with
+  torch.profiler.profile(...):` block around a few warmed-up forward
+  calls. **Action:** profile `v_router2.py` (the eager `best`/`amp` routes,
+  where T7's Triton kernel now lives) on 2-3 representative shapes
+  (#1 small, #8 GEMM-heavy, #13 long-seq) and report the real top-3
+  time-consuming ops per shape. This either confirms the FFN/AddNorm
+  intuition behind T10 below, or surfaces something nobody has looked for
+  yet — that's the actual point of profiling before choosing the next
+  kernel, not after.
+
+- **T10 — OPEN, the deliberately-deferred sibling of T7.** Fused FFN
+  epilogue (`Linear → GELU → Linear`). Explicitly considered during T7's
+  survey and passed over *for* AddNorm specifically because it's
+  higher-risk (a fused GEMM+epilogue Triton kernel has to actually beat
+  cuBLAS/Inductor's already-tuned matmul, not just save bandwidth like
+  AddNorm does) — not because it lacks headroom. Now that AddNorm has
+  landed, validated, and shown the whole "ship a correctness-gated Triton
+  kernel here" pattern works, this is the natural second kernel. Shape #8's
+  real ceiling is still ambiguous (`docs/research-batch2.md`: could be 57%
+  of the TF32 156 TFLOP/s ceiling or 29% of the fp16 312 TFLOP/s ceiling
+  depending on which op dominates under `autocast`'s mixed dtype policy) —
+  real, unresolved headroom either way, but **M2's profiling result should
+  settle whether FFN is actually the bottleneck before starting this**,
+  not just Roofline inference.
+  *Risk, stated plainly:* this needs real tile-size/pipeline-stage tuning
+  to have a chance of beating an already-tuned GEMM — budget for it to take
+  longer than T7 did, and for a first attempt to land at parity or worse
+  before tuning helps.
+
+- **T11 — OPEN, the actionable follow-through to L3 (which was
+  explanatory-only).** L3 confirmed `torch.compile`'s max-autotune does
+  NOT deduplicate identical-shaped matmuls across the N unrolled repeated
+  layers (24 AUTOTUNE lines collapsed to only 2 distinct shapes, each
+  autotuned 12 times, for shape #1's `num_layers=4`) — but never tried the
+  fix. Hypothesis: compile only `OptimizedBlock.forward` once (not the
+  whole unrolled multi-layer forward), and call the *same* compiled
+  callable N times in the layer loop. Since every layer shares identical
+  shapes (only the weights differ), this should let Inductor's autotune
+  cache genuinely hit rather than re-benchmark per occurrence — cutting
+  compile time, and might sidestep S2's diagnosed CUDA-graph-pool
+  interaction too (fewer distinct compiled graph instances alive at once
+  across a sweep). Directly relevant to whether `v_compile.py`-style
+  routes could ever become viable for shape #14 (iter 7's original
+  timeout) — not urgent for the current leaderboard, but the cleanest
+  remaining lead on *why* compile scales badly with `num_layers`.
+  *Falsify:* per-layer compilation doesn't reduce total AUTOTUNE line count
+  → the redundancy isn't fixable this way, close it.
+
+- **T12 — OPEN, low priority, marginal expected upside.** Manual
+  `torch.cuda.graph()` capture (hand-rolled, not via `torch.compile`'s
+  automatic `reduce-overhead` mode). More explicit control over exactly
+  what gets captured and replayed, without Inductor's guard/specialization
+  machinery in the way — in principle could shave a bit more launch
+  overhead off the tiny-batch shapes (#2, #3) than `reduce-overhead`
+  already does. Real but likely small: `reduce-overhead` already captures
+  the whole compiled region as one CUDA graph, so a hand-rolled version is
+  mostly betting that Inductor's own graph boundary is suboptimal, which
+  is a narrower claim than it sounds. Lower priority than S8/S9/M2/T10/T11
+  above — only worth it if profiling (M2) specifically shows launch
+  overhead, not compute, still dominates one of the small shapes after
+  everything else lands.
 
 ## Literature review cross-check (`~/Downloads/deep-research-report.md`)
 
