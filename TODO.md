@@ -440,6 +440,27 @@ because three of the four are **not** the same problem:
   evidence, because it is timestamped rather than written for a judge. Add the
   trailer going forward and state the tooling explicitly in `TECH_REPORT.md` §6.
 
+- **T16 — NEW, built, dispatched.** `candidates/v_manual_fp16.py`: attacks
+  the OTHER large item M2 found consistently on both profiled amp shapes
+  — fp32↔fp16 casting (`aten::to`/`_to_copy`/`copy_`) at **17.1-17.7%** of
+  CUDA time on shapes #8 and #13, unaddressed by T7/T15 (which targeted
+  the LayerNorm/residual side, not this). Root cause: `_AMPTransformer`
+  enters a fresh `torch.autocast` block on every single `forward()` call,
+  so every weight tensor gets re-cast fp32→fp16 from scratch every timed
+  iteration — autocast's own weight-cast cache only helps *within* one
+  call (each weight is used once per call, so it never helps here).
+  Fix: cast every Linear's weight/bias to fp16 **once**, in place, on the
+  first CUDA forward call, then never again — everything else (activation
+  casts at each Linear/attention boundary, fp32 LayerNorm reduction via
+  T7's kernel, SDPA's own internal fp32 accumulation) stays numerically
+  identical to what the current amp route already does, so this should be
+  bit-identical in output, just skipping redundant, deterministic,
+  throwaway weight-cast work. Builds on T7+T15's proven AddNorm structure
+  (both boundaries). CPU-fallback-tested (13/13-equivalent dev shapes).
+  GPU test dispatched — standalone first; only worth integrating into
+  `v_router2.py` if the amp-routed shapes (#6/#8/#13) show a real,
+  above-noise-floor (>2.7%, per S8) improvement.
+
 ## Open — the measurement that unblocks the rest
 
 - **M1 — CLOSED: falsified, new leaderboard best confirmed on A100-80.**
