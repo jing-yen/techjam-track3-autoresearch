@@ -117,6 +117,28 @@ through a guarded compare-and-swap after a fresh pull.
 | T6 | fp16 via `torch.autocast`, norms and reductions kept fp32 | Backend probe shows flash eligible on 14/14 shapes at fp16 vs 0/14 at fp32 | written, **not validated on GPU** | blanket cast failed 11/12; autocast untested |
 | T7 | Triton fused LayerNorm + residual ("AddNorm") | Reserved for remaining overhead after the above | **landed** | Roofline recheck found shape #8 at only ~28% of A100 fp16 peak — real headroom, reopened. Custom Triton kernel confirmed on A100-80, 13/13 correct: standalone +7.4% geomean vs plain LayerNorm; integrated into `v_router2`'s `best`/`amp` eager routes (kept separate from `compile`/`reduce`, which already get fusion from `torch.compile`/Inductor). Attributable per-shape gain on the AMP-routed shapes it touches: #6 +11%, #8 +4%, #13 +6%. See `TODO.md` T7 / `candidates/v_triton_addnorm.py` / `candidates/v_router2.py` |
 | T15 | Extend the T7 AddNorm kernel to the SECOND residual+norm boundary (ffn_out-add fused into the next layer's norm1, or into `final_norm`) | A real `torch.profiler` trace (M2, not Roofline inference) found T7 only covered one of two boundaries per layer; the unfused one measured 19.21% of shape #13's total CUDA time — bigger than T7's own already-fused kernel next to it | **landed** | Same kernel as T7, unmodified — only the block/transformer wiring changes so the fusion spans a layer boundary. Confirmed on A100-80, 13/13 correct, worst max_abs unchanged (0.00176). Per-shape gain on the 3 shapes it touches: #6 +17.2%, #8 +4.2%, #13 +12.5% — all above the ±2.7% measurement noise floor. See `TODO.md` T15 / `candidates/v_triton_addnorm2.py` / `candidates/v_router2.py` |
+| T17 | Same AddNorm fusion (both boundaries) applied to the `fused` route (shapes #9/#10/#11/#12), which had none — plus manual CUDA graph capture of the whole forward pass | The `fused` route's only prior optimization was T5's fused-QKV projection; norm/residual side was fully unfused eager PyTorch | **landed** | First attempt regressed 3 of 4 shapes ~30% despite genuinely lower measured GPU compute time — root-caused via two profiler passes (§6.4b) to CPU-side Triton-launch dispatch overhead exceeding available concurrent-GPU-work on low-compute shapes. Manual CUDA graph capture (the same mechanism `torch.compile(mode="reduce-overhead")` already gets automatically elsewhere in this file) eliminates that dispatch cost by replaying a captured kernel sequence. Confirmed on A100-80, 13/13 correct: #9 +59.1%, #10 +59.3%, #11 +18.0%, #12 +244.5% vs the plain `fused` route. See `TODO.md` T17 / `candidates/v_triton_addnorm_fused.py` / `candidates/v_router2.py` |
+
+**Attempted and closed, kept for the record rather than hidden** (full detail
+and real measured numbers in `TODO.md`/`journal.jsonl`, not summarized here to
+save space): a whole-model single-launch Triton "megakernel" (K1) — correct
+but ~11x slower, root cause traced to using 1 of the A100's 108 SMs, not a
+compile bug; a hand-fused Triton GEMM+bias+GELU kernel for the FFN's first
+projection (T10) — real and correct, wins on 10 of 13 shapes, but loses to
+cuBLASLt's tensor-core GEMM on the 3 `amp`-routed shapes in either fp32 or
+fp16, confirmed via Inductor's own autotune competition independently twice;
+a staged, narrower fused-FFN-block kernel targeting just the small-shape
+family (K1a) and a persistent-kernel (grid-stride-loop) redesign of the same
+kernel (K1a-persistent) — both closed against pre-agreed kill criteria, the
+persistent variant actively slower than the non-persistent one (a real
+lesson: the persistent-kernel pattern trades launch overhead for register
+pressure, and doesn't pay off for kernels this small); manually pre-casting
+the `amp` route's weights to fp16 once instead of every `torch.autocast` call
+(T16) — a real, source-traced mechanism, but the measured effect was mixed
+(one shape regressed outside the noise floor), because the profiled "casting
+overhead" line item bundles unavoidable activation-casting with the
+weight-casting this fix targets. None of these regress the leaderboard: the
+router only routes to a candidate that won a real comparison.
 
 **Correctness invariants preserved throughout** (full list in `PROGRAM.md`): exact
 erf GELU, fp32 softmax reduction, `1/sqrt(head_dim)` scale, `triu(diagonal=1)`
@@ -329,6 +351,46 @@ fp16**. The gating variable was never head_dim; it was dtype. We record this
 because it is the clearest evidence in the project for why the ledger, not the
 review loop, is the arbiter: two rounds of well-sourced reasoning were closer to
 each other than either was to the measurement.
+
+### 6.4b A worked example of distinguishing "doesn't work" from "hasn't been
+diagnosed yet"
+
+A real profiler trace (M2, §5) found that our own AddNorm fusion kernel (T7)
+only covered one of two residual+norm boundaries per layer — the other was
+19% of one shape's measured CUDA time, unfused. Extending the same kernel to
+that boundary (T15) landed cleanly: all three shapes it touched improved
+4-17%, confirmed against a directly-measured per-shape noise floor (S8: two
+identical back-to-back runs showed some shapes swinging over 35%, others
+under 0.5% — the noise floor is route-dependent, not a single flat number,
+and had to be measured, not assumed).
+
+Porting that same, already-proven kernel to a different route (T17) did not
+transfer: the first real test showed a large regression (-30% on three of
+four targeted shapes). The instinct at that point is to write off the
+approach. Instead we re-profiled the *fusion itself*, isolated from
+everything else — and found its raw GPU compute time was actually **lower**
+than the unfused baseline on every shape, including the regressed ones. The
+fusion was doing less work and still measuring slower. That contradiction is
+what a profiler is for: it ruled out the kernel's arithmetic and pointed
+directly at a mechanism — a missed reuse of an existing sync-avoidance
+optimization (worth a fix, but only recovered a fraction of the gap), and
+then, from a second profiler pass comparing a regressed shape against the
+one shape that *did* improve, a CPU-dispatch-bound regime: the fusion's
+Triton kernel launches carry real per-call Python dispatch overhead, and
+low-compute shapes don't have enough concurrent GPU work to hide it behind,
+while compute-heavy shapes do. Manually capturing the whole forward pass as
+a CUDA graph — eliminating that dispatch cost by replaying a pre-recorded
+kernel sequence instead of re-issuing it — turned the same regression into a
+59-244% improvement on the targeted shapes, correctness unchanged.
+
+The pattern worth recording: a negative result from a real, working
+optimization is evidence about *where the bottleneck actually is*, not
+evidence the optimization is wrong. Two profiler comparisons — regressed vs.
+baseline, then regressed vs. a shape that worked — did the actual diagnostic
+work; guessing at a mechanism and writing it into the record without
+checking (an earlier draft of this investigation did exactly that, blamed
+the wrong operation, and was corrected by the next profiler pass) would have
+closed a real, sizeable win.
 
 ### 6.5 Tools
 
