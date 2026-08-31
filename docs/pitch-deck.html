@@ -14,28 +14,24 @@
     --grid:           #e4e2dc;
     --accent:         #2a78d6;
     --accent-orange:  #eb6834;
-    --accent-aqua:    #1baf7a;
     --accent-wash:    rgba(42, 120, 214, 0.10);
     --orange-wash:    rgba(235, 104, 52, 0.10);
-    --danger:         #c94a3f;
   }
   @media (prefers-color-scheme: dark) {
     :root:not([data-theme="light"]) {
       color-scheme: dark;
       --surface-1: #14100b; --surface-2: #1e1811; --surface-3: #291f16;
       --text-primary: #ffffff; --text-secondary: #d8cdbd; --text-muted: #9b8f7d;
-      --grid: #362b1e; --accent: #4a94ec; --accent-orange: #e06a35; --accent-aqua: #2bc78c;
+      --grid: #362b1e; --accent: #4a94ec; --accent-orange: #e06a35;
       --accent-wash: rgba(74, 148, 236, 0.16); --orange-wash: rgba(224, 106, 53, 0.14);
-      --danger: #e0685c;
     }
   }
   :root[data-theme="dark"] {
     color-scheme: dark;
     --surface-1: #14100b; --surface-2: #1e1811; --surface-3: #291f16;
     --text-primary: #ffffff; --text-secondary: #d8cdbd; --text-muted: #9b8f7d;
-    --grid: #362b1e; --accent: #4a94ec; --accent-orange: #e06a35; --accent-aqua: #2bc78c;
+    --grid: #362b1e; --accent: #4a94ec; --accent-orange: #e06a35;
     --accent-wash: rgba(74, 148, 236, 0.16); --orange-wash: rgba(224, 106, 53, 0.14);
-    --danger: #e0685c;
   }
   * { box-sizing: border-box; }
   html, body { margin: 0; height: 100%; overflow: hidden; background: var(--surface-1); }
@@ -54,66 +50,44 @@
     font-family: "IBM Plex Mono", monospace; font-size: 13px; color: var(--accent);
     text-transform: uppercase; letter-spacing: 0.1em; font-weight: 500; margin: 0 0 10px;
   }
-  h1.slide-h { font-size: clamp(28px, 4.6vw, 56px); font-weight: 650; color: var(--text-primary); margin: 0 0 14px; line-height: 1.1; text-wrap: balance; letter-spacing: -0.015em; }
-  h2.slide-h2 { font-size: clamp(18px, 2.4vw, 26px); font-weight: 500; color: var(--text-secondary); margin: 0 0 22px; line-height: 1.35; max-width: 62ch; }
-  p.slide-p { font-size: clamp(13px, 1.4vw, 17px); color: var(--text-secondary); line-height: 1.6; max-width: 60ch; }
+  h1.slide-h { font-size: clamp(24px, 3.4vw, 42px); font-weight: 650; color: var(--text-primary); margin: 0 0 10px; line-height: 1.15; text-wrap: balance; letter-spacing: -0.01em; }
+  h2.slide-h2 { font-size: clamp(14px, 1.6vw, 18px); font-weight: 400; color: var(--text-secondary); margin: 0 0 20px; line-height: 1.5; max-width: 68ch; }
+  p.slide-p { font-size: clamp(13px, 1.35vw, 16px); color: var(--text-secondary); line-height: 1.6; max-width: 62ch; }
 
-  .chart-box { width: min(1000px, 82vw); height: min(46vh, 460px); margin-top: 1.5vh; }
-  .chart-box.wide { width: min(1150px, 86vw); }
+  .chart-box { width: min(1150px, 84vw); height: min(50vh, 480px); margin-top: 1vh; }
 
-  /* Slide 1: title */
-  #s-title { align-items: center; text-align: center; }
-  .title-eyebrow { font-family: "IBM Plex Mono", monospace; color: var(--text-muted); font-size: clamp(11px,1.3vw,14px); letter-spacing: 0.12em; text-transform: uppercase; margin-bottom: 18px; }
-  .title-hero { font-size: clamp(30px, 5.6vw, 68px); font-weight: 650; color: var(--text-primary); line-height: 1.08; max-width: 22ch; text-wrap: balance; }
-  .title-hero .accent { color: var(--accent); }
-  .title-stats { display: flex; gap: 48px; margin-top: 5vh; }
-  .title-stat-num { font-family: "IBM Plex Mono", monospace; font-weight: 600; font-size: clamp(26px,3.6vw,44px); color: var(--text-primary); }
-  .title-stat-lbl { font-size: 12px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.06em; margin-top: 4px; }
+  .gate-pill { display: inline-flex; align-items: center; gap: 8px; background: var(--accent-wash); color: var(--accent); border-radius: 999px; padding: 7px 16px; font-family: "IBM Plex Mono", monospace; font-size: clamp(11px,1.15vw,13px); font-weight: 600; margin-top: 12px; }
 
-  /* Gate pill */
-  .gate-pill { display: inline-flex; align-items: center; gap: 8px; background: var(--accent-wash); color: var(--accent); border-radius: 999px; padding: 8px 18px; font-family: "IBM Plex Mono", monospace; font-size: clamp(11px,1.2vw,14px); font-weight: 600; margin-top: 14px; }
+  /* Team roster */
+  .team-row { display: flex; gap: 3%; margin-top: 3vh; }
+  .team-card { flex: 1; background: var(--surface-2); border-radius: 12px; padding: 4% 5%; }
+  .team-name { font-size: clamp(15px,1.6vw,19px); font-weight: 650; color: var(--text-primary); }
+  .team-role { display: inline-block; font-family: "IBM Plex Mono", monospace; font-size: clamp(10px,1.05vw,12px); color: var(--accent); text-transform: uppercase; letter-spacing: 0.05em; margin: 8px 0 10px; }
+  .team-body { font-size: clamp(11px,1.15vw,13.5px); color: var(--text-secondary); line-height: 1.55; }
 
-  /* Code block */
-  .code-block { background: var(--surface-2); border-radius: 10px; padding: 22px 26px; font-family: "IBM Plex Mono", monospace; font-size: clamp(10px,1.15vw,14px); color: var(--text-secondary); line-height: 1.65; white-space: pre; margin: 18px 0 0; max-width: min(760px, 80vw); overflow: hidden; }
-  .code-block .kw { color: var(--accent); }
-  .code-block .cm { color: var(--text-muted); }
+  /* Hardware spec tiles */
+  .spec-row { display: flex; gap: 3%; margin-top: 3vh; }
+  .spec-tile { flex: 1; background: var(--surface-2); border-radius: 12px; padding: 3.5% 4%; }
+  .spec-label { font-size: clamp(10px,1.05vw,12.5px); color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.06em; }
+  .spec-value { font-family: "IBM Plex Mono", monospace; font-size: clamp(18px,2.4vw,27px); font-weight: 600; color: var(--text-primary); margin-top: 4%; }
 
-  /* Architecture diagram (methodology slide) */
-  .arch-row { display: flex; align-items: center; gap: 14px; margin-top: 3vh; flex-wrap: wrap; }
-  .arch-box { background: var(--surface-2); border-radius: 10px; padding: 16px 20px; font-family: "IBM Plex Mono", monospace; font-size: clamp(10px,1.1vw,13px); color: var(--text-secondary); text-align: center; min-width: 110px; }
+  /* Architecture diagram */
+  .arch-diagram { margin-top: 3vh; display: flex; flex-direction: column; gap: 14px; max-width: 920px; }
+  .arch-layer-label { font-family: "IBM Plex Mono", monospace; font-size: clamp(10px,1.05vw,12.5px); color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 8px; }
+  .arch-row { display: flex; align-items: stretch; gap: 10px; }
+  .arch-box { flex: 1; display: flex; align-items: center; justify-content: center; text-align: center; background: var(--surface-2); border-radius: 10px; padding: 14px 12px; font-size: clamp(11px,1.15vw,13.5px); color: var(--text-secondary); }
   .arch-box.pick { background: var(--accent-wash); color: var(--accent); font-weight: 600; }
-  .arch-arrow { color: var(--text-muted); font-size: 20px; }
-  .route-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; margin-top: 3vh; max-width: 900px; }
-  .route-cell { background: var(--surface-2); border-radius: 8px; padding: 10px 8px; text-align: center; font-family: "IBM Plex Mono", monospace; font-size: clamp(9px,0.95vw,12px); }
-  .route-cell .impl { color: var(--accent); font-weight: 600; display:block; margin-top:2px; }
+  .arch-arrow { display: flex; align-items: center; color: var(--text-muted); font-size: 18px; flex: 0 0 auto; }
+  .arch-channel { display: flex; justify-content: space-between; align-items: center; background: var(--surface-3); border-radius: 8px; padding: 8px 20px; }
+  .arch-channel-item { font-family: "IBM Plex Mono", monospace; font-size: clamp(10.5px,1.1vw,13px); color: var(--text-secondary); }
+  .arch-channel-item b { color: var(--accent-orange); font-weight: 600; }
+  .arch-caption { font-size: clamp(11.5px,1.2vw,13.5px); color: var(--text-muted); margin-top: 2vh; max-width: 72ch; line-height: 1.55; }
 
-  /* Stat tiles */
-  .stat-row { display: flex; gap: 4%; margin-top: 3vh; }
-  .stat-tile { flex: 1; background: var(--surface-2); border-radius: 12px; padding: 3% 4%; }
-  .stat-label { font-size: clamp(10px,1.05vw,13px); color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.06em; }
-  .stat-value { font-family: "IBM Plex Mono", monospace; font-size: clamp(24px,3.6vw,42px); font-weight: 600; color: var(--text-primary); margin: 3% 0 2%; }
-  .stat-delta { display: inline-block; font-family: "IBM Plex Mono", monospace; font-size: clamp(10px,1.05vw,13px); font-weight: 600; color: var(--accent); background: var(--accent-wash); border-radius: 999px; padding: 3% 6%; }
-
-  /* Negative results */
-  .neg-row { display: flex; gap: 2.5%; margin-top: 3vh; }
-  .neg-card { flex: 1; background: var(--surface-2); border-left: 3px solid var(--danger); border-radius: 0 10px 10px 0; padding: 4% 5%; }
-  .neg-title { font-weight: 600; color: var(--text-primary); font-size: clamp(12px,1.3vw,16px); margin-bottom: 6px; }
-  .neg-body { font-size: clamp(10.5px,1.1vw,13px); color: var(--text-secondary); line-height: 1.55; }
-  .neg-tag { font-family: "IBM Plex Mono", monospace; font-size: clamp(9px,0.95vw,11px); color: var(--danger); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 8px; display: block; }
-
-  /* Tags */
-  .tag-row { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 3vh; }
-  .tag { font-family: "IBM Plex Mono", monospace; font-size: clamp(10px,1.1vw,13px); color: var(--text-secondary); background: var(--surface-2); border-radius: 8px; padding: 10px 16px; }
-
-  .close-list { margin-top: 2vh; padding-left: 0; list-style: none; }
-  .close-list li { font-size: clamp(12px,1.5vw,17px); color: var(--text-secondary); margin-bottom: 1.6%; padding-left: 1.6em; position: relative; }
-  .close-list li::before { content: "\2192"; position: absolute; left: 0; color: var(--accent); }
-
-  /* Disclosure box (aggregate slide) */
-  .disclosure-box { background: var(--surface-2); border-left: 3px solid var(--accent-orange); border-radius: 0 10px 10px 0; padding: 3% 4%; margin-top: 3vh; max-width: 760px; }
-  .disclosure-title { font-weight: 600; color: var(--text-primary); font-size: clamp(12px,1.3vw,16px); margin-bottom: 6px; }
-  .disclosure-body { font-size: clamp(10.5px,1.1vw,13px); color: var(--text-secondary); line-height: 1.6; }
-  .disclosure-body b { color: var(--text-primary); }
+  /* Wrap-up */
+  .stat-row { display: flex; gap: 4%; margin-top: 3vh; max-width: 760px; }
+  .stat-tile { flex: 1; background: var(--surface-2); border-radius: 12px; padding: 4% 5%; }
+  .stat-label { font-size: clamp(10px,1.05vw,12.5px); color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.06em; }
+  .stat-value { font-family: "IBM Plex Mono", monospace; font-size: clamp(22px,3vw,34px); font-weight: 600; color: var(--text-primary); margin-top: 4%; }
 
   /* Nav & chrome */
   .nav-bar {
@@ -143,144 +117,101 @@
 </style>
 
 <div id="deck">
-  <!-- 1: TITLE -->
-  <div class="slide active" data-notes="notes-1" id="s-title">
-    <div class="title-eyebrow">TikTok TechJam 2026 &middot; Track 3</div>
-    <div class="title-hero">Making a Transformer layer run <span class="accent">6.54&times; faster</span> — and proving every number is real</div>
-    <div class="title-stats">
-      <div><div class="title-stat-num">6.54&times;</div><div class="title-stat-lbl">confirmed geomean speedup</div></div>
-      <div><div class="title-stat-num">13/13</div><div class="title-stat-lbl">shapes correct</div></div>
-      <div><div class="title-stat-num">3</div><div class="title-stat-lbl">documented negative results</div></div>
+  <!-- 1: TEAM -->
+  <div class="slide active" data-notes="notes-1">
+    <div class="kicker">TikTok TechJam 2026 &middot; Track 3</div>
+    <h1 class="slide-h">Transformer GPU kernel optimization</h1>
+    <h2 class="slide-h2">A GPU implementation of a fixed pre-LayerNorm Transformer block, optimized against a correctness-gated benchmark.</h2>
+    <div class="team-row">
+      <div class="team-card">
+        <div class="team-name">Tong Jing Yen</div>
+        <div class="team-role">Implementation</div>
+        <div class="team-body">Autoresearch agent loop, candidate kernels, benchmark harness, cluster and RunPod integration.</div>
+      </div>
+      <div class="team-card">
+        <div class="team-name">Khoo Shi Xian</div>
+        <div class="team-role">Research</div>
+        <div class="team-body">Problem-statement analysis, research queue, plan / review / reconcile loop, tech report.</div>
+      </div>
+      <div class="team-card">
+        <div class="team-name">Brandon Kang</div>
+        <div class="team-role">Team member</div>
+        <div class="team-body">&mdash;</div>
+      </div>
     </div>
   </div>
 
-  <!-- 2: PROBLEM -->
+  <!-- 2: OBJECTIVE -->
   <div class="slide" data-notes="notes-2">
-    <div class="kicker">The problem</div>
-    <h1 class="slide-h">Replace one class. Keep the math identical.</h1>
-    <h2 class="slide-h2">14 fixed input shapes, one required correctness gate — no other rules on how you get there.</h2>
-    <div class="code-block"><span class="cm"># torch_transformer_benchmark.py</span>
-<span class="kw">class</span> UserOptimizedTransformer(BaselineTransformer):
-    <span class="cm"># forward signature unchanged, output identical shape</span>
-    <span class="kw">def</span> forward(self, x, valid_token_mask=<span class="kw">None</span>):
-        <span class="kw">return</span> super().forward(x, valid_token_mask)</div>
+    <div class="kicker">The task</div>
+    <h1 class="slide-h">Faster than the reference, correct on 14 shapes</h1>
+    <p class="slide-p">Track 3 asks for a GPU implementation of a fixed Transformer block that runs faster than the organizer's reference implementation, while matching it within a per-element tolerance across 14 published input shapes.</p>
     <div class="gate-pill">relative error &lt; 0.02 &nbsp;&middot;&nbsp; absolute error &lt; 0.002</div>
   </div>
 
-  <!-- 3: APPROACH -->
+  <!-- 3: HARDWARE -->
   <div class="slide" data-notes="notes-3">
-    <div class="kicker">The approach</div>
-    <h1 class="slide-h">No single technique wins every shape</h1>
-    <h2 class="slide-h2">So don't pick one — measure all of them, per shape, and dispatch to whichever actually wins.</h2>
-    <div class="arch-row">
-      <div class="arch-box">input shape</div>
-      <div class="arch-arrow">&rarr;</div>
-      <div class="arch-box pick">router lookup</div>
-      <div class="arch-arrow">&rarr;</div>
-      <div class="arch-box">best-measured impl</div>
-    </div>
-    <div class="route-grid">
-      <div class="route-cell">best<span class="impl">plain SDPA</span></div>
-      <div class="route-cell">amp<span class="impl">fp16 + CUDA graph</span></div>
-      <div class="route-cell">compile<span class="impl">max-autotune</span></div>
-      <div class="route-cell">reduce<span class="impl">reduce-overhead</span></div>
-      <div class="route-cell">fusedcg<span class="impl">fused QKV + graph</span></div>
+    <div class="kicker">Hardware</div>
+    <h1 class="slide-h">RunPod, A100-SXM4-80GB</h1>
+    <p class="slide-p">Our university cluster's shared A100 queue became the actual bottleneck mid-project &mdash; multi-hour waits between runs. We moved to on-demand RunPod A100 instances, provisioned per benchmark and torn down immediately after.</p>
+    <div class="spec-row">
+      <div class="spec-tile"><div class="spec-label">Memory</div><div class="spec-value">80 GB</div></div>
+      <div class="spec-tile"><div class="spec-label">Form factor</div><div class="spec-value">SXM4</div></div>
+      <div class="spec-tile"><div class="spec-label">Provisioning</div><div class="spec-value">On-demand</div></div>
+      <div class="spec-tile"><div class="spec-label">Lifecycle</div><div class="spec-value">Per-run</div></div>
     </div>
   </div>
 
-  <!-- 4: PROGRESSION CHART -->
+  <!-- 4: ARCHITECTURE -->
   <div class="slide" data-notes="notes-4">
-    <div class="kicker">The journey</div>
-    <h1 class="slide-h">Every stacked change, one GPU, start to finish</h1>
-    <h2 class="slide-h2">RunPod A100-SXM4-80GB, our canonical device — no hardware swap hides in this line.</h2>
-    <div class="chart-box wide" id="chart-progression"></div>
+    <div class="kicker">Method</div>
+    <h1 class="slide-h">Two agent layers, coordinated through git</h1>
+    <div class="arch-diagram">
+      <div>
+        <div class="arch-layer-label">Research layer</div>
+        <div class="arch-row">
+          <div class="arch-box">plan a direction</div>
+          <div class="arch-arrow">&rarr;</div>
+          <div class="arch-box">adversarial review</div>
+          <div class="arch-arrow">&rarr;</div>
+          <div class="arch-box">reconcile</div>
+        </div>
+      </div>
+      <div class="arch-channel">
+        <div class="arch-channel-item"><b>TODO.md</b> &nbsp;&rarr;&nbsp; hypotheses, ranked</div>
+        <div class="arch-channel-item">&nbsp;&larr;&nbsp; results, logged &nbsp;<b>journal.jsonl</b></div>
+      </div>
+      <div>
+        <div class="arch-layer-label">Implementation layer</div>
+        <div class="arch-row">
+          <div class="arch-box">write one candidate</div>
+          <div class="arch-arrow">&rarr;</div>
+          <div class="arch-box">benchmark + correctness gate</div>
+          <div class="arch-arrow">&rarr;</div>
+          <div class="arch-box pick">keep or prune</div>
+        </div>
+      </div>
+    </div>
+    <p class="arch-caption">The two layers share no state except these two files. Every claim entering the research layer already passed the correctness gate &mdash; speed is never discussed before that.</p>
   </div>
 
-  <!-- 5: SHAPE 14 -->
+  <!-- 5: IMPROVEMENTS -->
   <div class="slide" data-notes="notes-5">
-    <div class="kicker">The dead end that became the story</div>
-    <h1 class="slide-h" style="font-size:clamp(22px,3.2vw,38px)">Shape 14 didn't fit this run at all</h1>
-    <p class="slide-p">Job 777216 &mdash; killed at the 30-minute SLURM limit, zero progress logged. Chunking made it <em>run</em>. The real question was what made it <em>fast</em>.</p>
-    <div class="chart-box" id="chart-shape14"></div>
+    <div class="kicker">Results</div>
+    <h1 class="slide-h">6.54&times; geomean speedup, five iterations, one GPU</h1>
+    <div class="chart-box" id="chart-improvements"></div>
   </div>
 
-  <!-- 6: SHAPE 13 -->
+  <!-- 6: WRAP-UP -->
   <div class="slide" data-notes="notes-6">
-    <div class="kicker">The single biggest win</div>
-    <h1 class="slide-h" style="font-size:clamp(22px,3.2vw,38px)">Shape 13 was quietly routed to the wrong thing</h1>
-    <p class="slide-p">Fell through to a fallback route nobody had actually benchmarked for this shape. A real head-to-head across all six implementations found the gap.</p>
-    <div class="chart-box" id="chart-shape13"></div>
-  </div>
-
-  <!-- 7: REROUTE -->
-  <div class="slide" data-notes="notes-7">
-    <div class="kicker">Not an isolated fix</div>
-    <h1 class="slide-h" style="font-size:clamp(22px,3.2vw,38px)">Shape 13 wasn't the only one</h1>
-    <p class="slide-p">The routing table predated three major kernel changes. A systematic re-check of all 13 shapes found six more stale routes.</p>
-    <div class="chart-box wide" id="chart-reroute"></div>
-  </div>
-
-  <!-- 8: AGGREGATE -->
-  <div class="slide" data-notes="notes-8">
-    <div class="kicker">The result</div>
-    <h1 class="slide-h">13/13 correct, every claim GPU-verified</h1>
+    <div class="kicker">Summary</div>
+    <h1 class="slide-h">13 of 13 shapes correct, at 6.54&times;</h1>
+    <p class="slide-p">Every number in this deck came from a GPU run logged in <code>journal.jsonl</code> before it was reported. Two optimizations that did not work &mdash; and the actual mechanism behind each failure &mdash; are documented in the tech report rather than left out.</p>
     <div class="stat-row">
-      <div class="stat-tile"><div class="stat-label">Median speedup</div><div class="stat-value">5.40&times;</div><div class="stat-delta">from 4.57&times;</div></div>
-      <div class="stat-tile"><div class="stat-label">Geomean speedup</div><div class="stat-value">6.54&times;</div><div class="stat-delta">+34.9%</div></div>
-      <div class="stat-tile"><div class="stat-label">Correctness</div><div class="stat-value">13/13</div><div class="stat-delta">rel&lt;0.02 abs&lt;0.002</div></div>
+      <div class="stat-tile"><div class="stat-label">Median speedup</div><div class="stat-value">5.40&times;</div></div>
+      <div class="stat-tile"><div class="stat-label">Geomean speedup</div><div class="stat-value">6.54&times;</div></div>
+      <div class="stat-tile"><div class="stat-label">Correctness</div><div class="stat-value">13/13</div></div>
     </div>
-    <div class="disclosure-box">
-      <div class="disclosure-title">Why we trust this number</div>
-      <div class="disclosure-body">The first full sweep on this device only logged <b>pass/fail</b> correctness, not the per-shape error margins our earlier runs always carried &mdash; so we didn't call it confirmed yet. We re-ran the identical, unmodified candidate specifically to capture the full per-shape <b>max_abs / max_rel</b> breakdown. Result: <b>5.40&times; / 6.54&times;</b>, within 1.3% of the first run &mdash; the same number, now with the evidence attached.</div>
-    </div>
-  </div>
-
-  <!-- 9: NEGATIVE RESULTS -->
-  <div class="slide" data-notes="notes-9">
-    <div class="kicker">What we ruled out, and why</div>
-    <h1 class="slide-h" style="font-size:clamp(22px,3.2vw,38px)">A dead end explained is worth more than a claim untested</h1>
-    <div class="neg-row">
-      <div class="neg-card">
-        <span class="neg-tag">Rejected</span>
-        <div class="neg-title">Pretransposed Linear weights</div>
-        <div class="neg-body">Won standalone (+80%). Regressed 10&ndash;44% stacked on CUDA-graph routes &mdash; an extra kernel launch per call outweighed the layout win.</div>
-      </div>
-      <div class="neg-card">
-        <span class="neg-tag">Rejected</span>
-        <div class="neg-title">Native fp16 weights</div>
-        <div class="neg-body">Correctness failed 2.5&ndash;5.8&times; over tolerance. Root cause found: autocast keeps the residual stream fp32 the whole time &mdash; native fp16 doesn't.</div>
-      </div>
-      <div class="neg-card">
-        <span class="neg-tag">Understood</span>
-        <div class="neg-title">Why autocast can't be "beaten"</div>
-        <div class="neg-body">Replicating its exact safety semantics by hand means reconstructing autocast itself &mdash; there's no free win left there.</div>
-      </div>
-    </div>
-  </div>
-
-  <!-- 10: TOOLING -->
-  <div class="slide" data-notes="notes-10">
-    <div class="kicker">How this was built</div>
-    <h1 class="slide-h" style="font-size:clamp(22px,3.2vw,38px)">Claude Code, dispatching to real GPU hardware</h1>
-    <p class="slide-p">Every number in this deck came from a measured run on real hardware &mdash; including the charts. Nothing here is estimated.</p>
-    <div class="tag-row">
-      <div class="tag">Claude Code</div>
-      <div class="tag">RunPod A100-SXM4-80GB (canonical)</div>
-      <div class="tag">TODO.md / journal.jsonl</div>
-      <div class="tag">git-coordinated agent log</div>
-      <div class="tag">SoC A100-80 cluster (earlier device)</div>
-    </div>
-  </div>
-
-  <!-- 11: CLOSE -->
-  <div class="slide" data-notes="notes-11">
-    <div class="kicker">What's left</div>
-    <h1 class="slide-h" style="font-size:clamp(22px,3.2vw,38px)">Honest, not finished</h1>
-    <ul class="close-list">
-      <li>Pretransposed Linears: real win on one shape (d_model=1024), applied there only</li>
-      <li>An optional cross-check back on our previous device (SoC A100-80) would still be nice for our own confidence &mdash; no longer a submission blocker</li>
-      <li>Full write-up, reproduction steps, and every negative result are in the repo</li>
-    </ul>
   </div>
 </div>
 
@@ -288,7 +219,7 @@
   <button class="nav-btn" id="prevBtn">&larr;</button>
   <div class="nav-dots" id="navDots"></div>
   <button class="nav-btn" id="nextBtn">&rarr;</button>
-  <span class="nav-label" id="navLabel">1/11</span>
+  <span class="nav-label" id="navLabel">1/6</span>
   <button class="notes-btn" id="notesBtn">notes</button>
 </div>
 
@@ -299,17 +230,12 @@
 
 <script>
 const NOTES = {
-  "notes-1": "6.54x confirmed geomean speedup on a Transformer layer, thirteen out of thirteen shapes still numerically correct, and three negative results documented instead of hidden. Not from one clever kernel — from measuring what was actually slow and proving every claimed win before it counts. That's what this project is: using AI-assisted tooling to optimize GPU kernels, and treating every number as something to prove, not assume.",
-  "notes-2": "The task: replace this one class, UserOptimizedTransformer, and make it faster without changing what it computes. The organizer specifies fourteen fixed input shapes. Every candidate has to pass a real correctness gate against the baseline before any speedup number counts.",
-  "notes-3": "No single implementation wins every shape — plain SDPA, fp16 autocast with CUDA graphs, torch.compile in two different modes, fused-QKV with graph capture. Rather than pick one, we measure all of them per shape and route to whichever actually won, backed by real GPU numbers, not a heuristic.",
-  "notes-4": "Here's the full arc, all measured on our canonical device so nothing here conflates a hardware change with an actual optimization. 2.87x at the start, up to 6.54x geomean today — the speedup itself more than doubled, entirely from code changes.",
-  "notes-5": "Shape fourteen's sequence length is a hundred thousand tokens. Early on we tried the standard route and it never finished — we killed it after thirty minutes with zero progress. Chunking got it running at all. Then we asked: is the chunk size actually the bottleneck? Turns out it wasn't — precision was, by a factor of nine.",
-  "notes-6": "Shape thirteen was falling through to a route that nobody had actually benchmarked for this specific shape. We ran a real head-to-head across all six implementations. The winner wasn't close — four times better than the second-best option.",
-  "notes-7": "Once we found shape thirteen was mis-routed, the obvious question was: is it the only one? So we ran the same six-way comparison across every shape. It wasn't just shape thirteen — six more shapes had a stronger option sitting unused the whole time.",
-  "notes-8": "Stacked together: median moved from 4.57x to 5.40x, geomean from 4.85x to 6.54x — a real 35% aggregate improvement — with correctness holding at thirteen out of thirteen shapes, every single time. And this exact number only became official once we went back and captured the missing per-shape evidence — that's the box below.",
-  "notes-9": "Two ideas that looked promising on paper both failed for real, understood reasons — not just 'it didn't work.' We know exactly why pretransposed weights regressed, and exactly why autocast can't be replicated for free. That's the kind of problem understanding a pure speedup number doesn't show.",
-  "notes-10": "This was built with Claude Code driving the actual optimization work — proposing changes, dispatching them to GPU hardware, and only accepting a result once it was independently verified against real measurements.",
-  "notes-11": "What's left: a pretransposed-weights win specific to one shape, and an optional cross-check back on our previous device for our own confidence — no longer a submission blocker. Full reproduction steps and every negative result are documented in the repo, not hidden.",
+  "notes-1": "Our team split the work into two layers. Jing Yen built the implementation side: the agent loop, the candidate kernels, and the benchmarking infrastructure. Shi Xian led research: problem analysis, the review process, and the tech report.",
+  "notes-2": "Track 3 asks for a faster GPU implementation of a fixed Transformer block. The rules are simple: match the organizer's reference within a per-element tolerance, across fourteen published input shapes, or the speedup doesn't count.",
+  "notes-3": "We started on our university's shared A100 cluster, but the queue became the actual bottleneck — multi-hour waits between runs. We moved to RunPod, provisioning A100-SXM4-80GB instances on demand and tearing them down after each benchmark.",
+  "notes-4": "Rather than hand-tune one kernel, we built two agent layers that only talk to each other through git. A research layer proposes a direction, an adversarial review checks it, and the two reconcile on what's worth testing next. An implementation layer writes one candidate, runs it through the benchmark and correctness gate, and keeps or prunes it — the research layer reads back what happened from the same log.",
+  "notes-5": "Five real steps got us from a 2.87x speedup to 6.54x. Per-shape dispatch across validated implementations. Fp16 precision plus a custom fused kernel on the heaviest shapes. An autotuned kernel config that also fixed a shape that previously never finished. A systematic recheck that found six shapes were still on a stale routing decision. And a final re-run specifically to capture full correctness evidence for every shape, not just pass or fail.",
+  "notes-6": "Thirteen of thirteen shapes pass the correctness gate at 6.54 times the reference speed. Every number here came from a logged GPU run, and two optimizations that didn't work are documented with the actual reason they failed, not just that they did.",
 };
 
 // ---- theme-aware ECharts palette ----
@@ -326,11 +252,8 @@ function palette() {
     textStrong: dark ? "#ffffff" : "#0b0b0b",
     muted: dark ? "#9b8f7d" : "#85837c",
     grid: dark ? "#362b1e" : "#e4e2dc",
-    bg: "transparent",
     accent: dark ? "#4a94ec" : "#2a78d6",
     orange: dark ? "#e06a35" : "#eb6834",
-    aqua: dark ? "#2bc78c" : "#1baf7a",
-    yellow: dark ? "#c98500" : "#eda100",
   };
 }
 
@@ -339,100 +262,56 @@ function baseTextStyle(p) {
   return { fontFamily: "IBM Plex Sans", color: p.text };
 }
 
-function buildProgression() {
+const IMPROVEMENT_DETAIL = [
+  "Per-shape dispatch across four validated implementations — no new kernel code.",
+  "Fp16 autocast on the three most compute-heavy shapes, plus a custom fused Triton kernel.",
+  "Autotuned kernel launch config; shape 14 (100k-token sequence) moved from never finishing to ~8s per pass.",
+  "A systematic recheck found 6 of 13 shapes were still on a stale route — all confirmed with a real 6-way comparison.",
+  "Re-run specifically to capture full per-shape correctness margins — same result, now fully documented.",
+];
+
+function buildImprovements() {
   const p = palette();
-  const el = document.getElementById("chart-progression");
+  const el = document.getElementById("chart-improvements");
   const chart = echarts.init(el, null, { renderer: "svg" });
   const data = [2.87, 4.85, 4.88, 6.46, 6.54];
-  const labels = ["v_router\nper-shape dispatch", "v_router2\n+AMP, Triton AddNorm, graphs", "+T7b + shape 14\nautotune, chunked-amp route", "+shape 13 + reroute\n6-way re-comparison", "+iter 61\nfull correctness evidence"];
+  const labels = ["v_router\nper-shape dispatch", "v_router2\nAMP + fused kernel", "+ autotune\n+ shape 14 fix", "+ systematic\nre-route", "+ full correctness\nevidence"];
   chart.setOption({
     textStyle: baseTextStyle(p),
-    grid: { left: 50, right: 30, top: 30, bottom: 70 },
-    xAxis: { type: "category", data: labels, axisLine: { lineStyle: { color: p.grid } }, axisLabel: { color: p.muted, fontFamily: "IBM Plex Mono", fontSize: 10.5, lineHeight: 15 }, axisTick: { show: false } },
+    grid: { left: 54, right: 30, top: 40, bottom: 66 },
+    tooltip: {
+      trigger: "axis",
+      backgroundColor: p.textStrong === "#ffffff" ? "#1e1811" : "#ffffff",
+      borderColor: p.grid,
+      textStyle: { color: p.text, fontFamily: "IBM Plex Sans", fontSize: 12.5 },
+      formatter: (params) => {
+        const i = params[0].dataIndex;
+        return `<b style="color:${p.textStrong}">${data[i].toFixed(2)}x geomean</b><br/>${IMPROVEMENT_DETAIL[i]}`;
+      },
+      extraCssText: "max-width:320px; white-space:normal; line-height:1.5; padding:10px 12px;",
+    },
+    xAxis: { type: "category", data: labels, axisLine: { lineStyle: { color: p.grid } }, axisLabel: { color: p.muted, fontFamily: "IBM Plex Mono", fontSize: 11, lineHeight: 15 }, axisTick: { show: false } },
     yAxis: { type: "value", min: 2, max: 7.3, axisLabel: { color: p.muted, fontFamily: "IBM Plex Mono", formatter: "{value}x" }, splitLine: { lineStyle: { color: p.grid } } },
     series: [{
-      type: "line", data: data, symbolSize: 9, lineStyle: { width: 3, color: p.accent },
-      itemStyle: { color: p.accent }, areaStyle: { color: p.accent, opacity: 0.08 },
-      label: { show: true, position: "top", formatter: (d) => d.value.toFixed(2) + "x", color: p.textStrong, fontFamily: "IBM Plex Mono", fontWeight: 600, fontSize: 13 },
+      type: "line", data: data, smooth: true, symbolSize: 10,
+      lineStyle: { width: 3, color: p.accent },
+      itemStyle: { color: (params) => params.dataIndex === data.length - 1 ? p.orange : p.accent, borderWidth: 2, borderColor: p.textStrong === "#ffffff" ? "#14100b" : "#fcfcfb" },
+      areaStyle: {
+        color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+          { offset: 0, color: p.accent + "33" },
+          { offset: 1, color: p.accent + "00" },
+        ]),
+      },
+      label: { show: true, position: "top", formatter: (d) => d.value.toFixed(2) + "x", color: p.textStrong, fontFamily: "IBM Plex Mono", fontWeight: 600, fontSize: 14 },
       animationDuration: 900, animationEasing: "cubicOut",
     }],
-  });
-  return chart;
-}
-
-function buildShape14() {
-  const p = palette();
-  const el = document.getElementById("chart-shape14");
-  const chart = echarts.init(el, null, { renderer: "svg" });
-  const labels = ["chunk=4\nfp32 (original)", "chunk=8\nfp32", "chunk=8\nfp16", "chunk=16\nfp16"];
-  const data = [
-    { value: 74.6, itemStyle: { color: p.accent } },
-    { value: 68.3, itemStyle: { color: p.accent } },
-    { value: 8.2, itemStyle: { color: p.orange } },
-    { value: 8.3, itemStyle: { color: p.orange } },
-  ];
-  chart.setOption({
-    textStyle: baseTextStyle(p),
-    grid: { left: 55, right: 30, top: 30, bottom: 60 },
-    xAxis: { type: "category", data: labels, axisLine: { lineStyle: { color: p.grid } }, axisLabel: { color: p.muted, fontFamily: "IBM Plex Mono", fontSize: 11, lineHeight: 15 }, axisTick: { show: false } },
-    yAxis: { type: "value", axisLabel: { color: p.muted, fontFamily: "IBM Plex Mono", formatter: "{value}s" }, splitLine: { lineStyle: { color: p.grid } } },
-    series: [{
-      type: "bar", data: data, barWidth: "46%",
-      itemStyle: { borderRadius: [6, 6, 0, 0] },
-      label: { show: true, position: "top", formatter: (d) => d.value + "s", color: p.textStrong, fontFamily: "IBM Plex Mono", fontWeight: 600 },
-      animationDuration: 800, animationEasing: "elasticOut",
-    }],
-  });
-  return chart;
-}
-
-function buildShape13() {
-  const p = palette();
-  const el = document.getElementById("chart-shape13");
-  const chart = echarts.init(el, null, { renderer: "svg" });
-  const labels = ["best", "reduce", "fused", "fusedcg", "compile\n(fallback, ~4.0x historical)", "amp\n(winner)"];
-  const vals = [4.79, 5.06, 4.59, 5.10, 4.03, 14.16];
-  const colors = [p.muted, p.muted, p.muted, p.muted, p.muted, p.orange];
-  const data = vals.map((v, i) => ({ value: v, itemStyle: { color: colors[i], borderRadius: [6, 6, 0, 0] } }));
-  chart.setOption({
-    textStyle: baseTextStyle(p),
-    grid: { left: 50, right: 30, top: 30, bottom: 66 },
-    xAxis: { type: "category", data: labels, axisLine: { lineStyle: { color: p.grid } }, axisLabel: { color: p.muted, fontFamily: "IBM Plex Mono", fontSize: 10.5, lineHeight: 14 }, axisTick: { show: false } },
-    yAxis: { type: "value", axisLabel: { color: p.muted, fontFamily: "IBM Plex Mono", formatter: "{value}x" }, splitLine: { lineStyle: { color: p.grid } } },
-    series: [{
-      type: "bar", data: data, barWidth: "56%",
-      label: { show: true, position: "top", formatter: (d) => d.value.toFixed(2) + "x", color: p.textStrong, fontFamily: "IBM Plex Mono", fontWeight: 600 },
-      animationDuration: 900, animationEasing: "cubicOut",
-    }],
-  });
-  return chart;
-}
-
-function buildReroute() {
-  const p = palette();
-  const el = document.getElementById("chart-reroute");
-  const chart = echarts.init(el, null, { renderer: "svg" });
-  const shapes = ["shape 1", "shape 2", "shape 3", "shape 5", "shape 7", "shape 11", "shape 13"];
-  const before = [2.60, 7.66, 10.03, 2.77, 5.84, 3.45, 4.03];
-  const after = [4.88, 13.73, 13.35, 3.60, 7.63, 5.36, 14.16];
-  chart.setOption({
-    textStyle: baseTextStyle(p),
-    grid: { left: 50, right: 30, top: 40, bottom: 50 },
-    legend: { data: ["previous route", "corrected route"], top: 0, textStyle: { color: p.text, fontFamily: "IBM Plex Mono", fontSize: 11 }, itemWidth: 12, itemHeight: 12 },
-    xAxis: { type: "category", data: shapes, axisLine: { lineStyle: { color: p.grid } }, axisLabel: { color: p.muted, fontFamily: "IBM Plex Mono", fontSize: 11 }, axisTick: { show: false } },
-    yAxis: { type: "value", axisLabel: { color: p.muted, fontFamily: "IBM Plex Mono", formatter: "{value}x" }, splitLine: { lineStyle: { color: p.grid } } },
-    series: [
-      { name: "previous route", type: "bar", data: before, itemStyle: { color: p.muted, borderRadius: [4,4,0,0] }, barGap: "20%" },
-      { name: "corrected route", type: "bar", data: after, itemStyle: { color: p.orange, borderRadius: [4,4,0,0] } },
-    ],
-    animationDuration: 900, animationEasing: "cubicOut",
   });
   return chart;
 }
 
 function renderAllCharts() {
   charts.forEach(c => c && c.dispose());
-  charts = [buildProgression(), buildShape14(), buildShape13(), buildReroute()];
+  charts = [buildImprovements()];
 }
 
 // ---- slide navigation ----
@@ -458,7 +337,6 @@ function goTo(i) {
   navLabel.textContent = (cur + 1) + "/" + slides.length;
   const key = slides[cur].getAttribute("data-notes");
   notesText.textContent = NOTES[key] || "";
-  // (re)render charts on the slide we just entered, sized to its box
   setTimeout(() => { charts.forEach(c => c && c.resize()); }, 50);
 }
 

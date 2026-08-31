@@ -1,131 +1,107 @@
 # Track 3 Demo Video — Narration Script
 
-Target runtime: ~2:45-3:00. Timestamps are guides, not hard cuts — let the screen
-recording breathe where it needs to (especially the live run).
+Target runtime: ~3:00. Matches `docs/pitch-deck.html`'s 6 slides one-to-one —
+the deck's speaker-notes panel carries this same text per slide.
 
 ---
 
-## 1. Hook — 0:00-0:10
+## 1. Team & responsibility — ~0:00-0:15
 
-**ON SCREEN:** Shape 14 chart (docs/shape14-precision-chart.html), full screen, no
-narration for the first 2 seconds — let it sit.
+**ON SCREEN:** Slide 1 — project title, team roster (name / role / one-line
+responsibility for each of the three members).
 
 **NARRATION:**
-> "This chart is a nine-times speedup. Not from a clever kernel — from figuring out
-> what was actually slow. That's what this project is: using AI-assisted tooling to
-> optimize a Transformer layer's GPU kernels, and treating every claimed win as
-> something to prove, not assume."
+> "Our team split the work into two layers. Jing Yen built the implementation
+> side: the agent loop, the candidate kernels, and the benchmarking
+> infrastructure. Shi Xian led research: problem analysis, the review
+> process, and the tech report."
 
 ---
 
-## 2. The setup — 0:10-0:30
+## 2. Objective — ~0:15-0:29
 
-**ON SCREEN:** `torch_transformer_benchmark.py` — scroll to `UserOptimizedTransformer`
-stub. Then cut to the 14-shape table (from the spec / `docs/` — batch/seq_len/d_model/
-heads columns visible). Then `bench_harness.py --help` or the correctness-gate constants
-(rtol=0.02, atol=0.002).
+**ON SCREEN:** Slide 2 — one-sentence task statement, correctness-gate pill.
 
 **NARRATION:**
-> "The task: replace this one class, `UserOptimizedTransformer`, and make it faster
-> without changing what it computes. The organizer specifies fourteen fixed input
-> shapes — everything from tiny batches to one shape with a hundred-thousand-token
-> sequence length. Every candidate has to pass a real correctness gate against the
-> baseline before any speedup number counts — relative error under 0.02, absolute
-> error under 0.002."
+> "Track 3 asks for a faster GPU implementation of a fixed Transformer
+> block. The rules are simple: match the organizer's reference within a
+> per-element tolerance, across fourteen published input shapes, or the
+> speedup doesn't count."
 
 ---
 
-## 3. Run it live — 0:30-1:10
+## 3. Hardware — ~0:29-0:49
 
-**ON SCREEN:** Terminal, full width. Run:
-```
-python3 bench_harness.py --candidate candidates/v_router2_autotuned.py \
-  --shapes 1,2,3,4,5,6,7,8,9,10,11,12,13 --dtype float32 --device cuda
-```
-Let it actually run and print. Don't cut away from the correctness/speedup JSON
-printing per shape — this is the single most important shot in the video.
-
-**NARRATION (over the run, trail off once output starts):**
-> "So here's the current best candidate actually running against real GPU hardware
-> — thirteen of the fourteen shapes, correctness checked every single time."
-
-**(let it finish, then, over the final JSON block):**
-> "Correctness passed on all thirteen. Median speedup 4.89x, geometric mean 4.88x,
-> against the unmodified baseline."
-
----
-
-## 4. The interesting part — shape 14 — 1:10-2:10
-
-**ON SCREEN:** Quote/screenshot from `journal.jsonl` iter 7 — the line about job
-777216 being cancelled at a 30-minute SLURM limit with zero progress. Then cut to the
-shape-14 chart again, this time let each bar animate/appear if you want, or just hold
-on the finished chart with the annotation visible.
+**ON SCREEN:** Slide 3 — RunPod A100-SXM4-80GB, 4 spec tiles (80GB / SXM4 /
+on-demand / per-run lifecycle).
 
 **NARRATION:**
-> "Shape fourteen didn't fit this run — and that's the actual story. Its sequence
-> length is a hundred thousand tokens. Early on, we tried the standard route —
-> torch.compile's max-autotune — and it never finished. We killed the job after
-> thirty minutes with zero progress logged. Before this project, this shape was
-> effectively broken.
->
-> The fix that worked was splitting the batch into small chunks so it fits in
-> memory at all. The obvious next question was: how small should the chunks be? So
-> we measured it directly, instead of guessing. Chunk size four, chunk size eight,
-> both in full precision — barely different, sixty-eight versus seventy-five
-> seconds per forward pass. Then we tried switching to sixteen-bit floating point.
->
-> Eight point two seconds. Chunk size sixteen, still fp16: eight point three —
-> functionally the same as eight. So the chunk count was never the bottleneck.
-> Precision was. This shape moves so much data through memory that halving the
-> bytes per element mattered nine times more than any amount of clever chunking."
+> "We started on our university's shared A100 cluster, but the queue became
+> the actual bottleneck — multi-hour waits between runs. We moved to
+> RunPod, provisioning A100-SXM4-80GB instances on demand and tearing them
+> down after each benchmark."
 
 ---
 
-## 5. The aggregate win — 2:10-2:30
+## 4. Agentic architecture — ~0:49-1:33
 
-**ON SCREEN:** Simple stat card or the leaderboard.md diff — before/after numbers
-side by side. Keep it to one screen, don't scroll through the whole file.
+**ON SCREEN:** Slide 4 — two-layer diagram (research: plan → adversarial
+review → reconcile; implementation: write candidate → benchmark + gate →
+keep/prune), connected through `TODO.md` / `journal.jsonl`.
 
 **NARRATION:**
-> "Stacked with an autotuned kernel launch config on top of the existing routing
-> table, the aggregate median moved from 4.57x to 4.89x, with correctness holding
-> at thirteen out of thirteen — and shape fourteen went from a route that never
-> completes to roughly eight seconds a pass."
+> "Rather than hand-tune one kernel, we built two agent layers that only
+> talk to each other through git. A research layer proposes a direction, an
+> adversarial review checks it, and the two reconcile on what's worth
+> testing next. An implementation layer writes one candidate, runs it
+> through the benchmark and correctness gate, and keeps or prunes it — the
+> research layer reads back what happened from the same log."
 
 ---
 
-## 6. AI tooling note — 2:30-2:45
+## 5. Incremental improvements — ~1:33-2:33
 
-**ON SCREEN:** Brief glimpse of the multi-agent git coordination files (`TODO.md`,
-`journal.jsonl`, `AGENTS.md`) — enough to show real structure, not a deep dive.
+**ON SCREEN:** Slide 5 — the geomean-speedup line chart (2.87x → 4.85x →
+4.88x → 6.46x → 6.54x), five points, hover tooltip per point for the detail
+line below.
 
 **NARRATION:**
-> "This was built with Claude Code driving the actual optimization work — proposing
-> changes, dispatching them to GPU hardware, and only accepting a result once it was
-> independently verified. Every claim in this video, including the shape-fourteen
-> chart, came from a real measured run, not an estimate."
+> "Five real steps got us from a 2.87x speedup to 6.54x. Per-shape dispatch
+> across validated implementations. Fp16 precision plus a custom fused
+> kernel on the heaviest shapes. An autotuned kernel config that also fixed
+> a shape that previously never finished. A systematic recheck that found
+> six shapes were still on a stale routing decision. And a final re-run
+> specifically to capture full correctness evidence for every shape, not
+> just pass or fail."
+
+*Per-point detail (matches the chart's hover tooltips):*
+1. Per-shape dispatch across four validated implementations — no new kernel code.
+2. Fp16 autocast on the three most compute-heavy shapes, plus a custom fused Triton kernel.
+3. Autotuned kernel launch config; shape 14 (100k-token sequence) moved from never finishing to ~8s per pass.
+4. A systematic recheck found 6 of 13 shapes were still on a stale route — all confirmed with a real 6-way comparison.
+5. Re-run specifically to capture full per-shape correctness margins — same result, now fully documented.
 
 ---
 
-## 7. Close — 2:45-3:00
+## 6. Wrap-up — ~2:33-2:58
 
-**ON SCREEN:** Back to the shape-14 chart, or a plain end card with the repo link.
+**ON SCREEN:** Slide 6 — final stat tiles (median 5.40x / geomean 6.54x /
+13/13 correct).
 
 **NARRATION:**
-> "What's left: applying a pre-transposed weight-layout trick we validated in
-> isolation but haven't stacked into the main routing table yet, and giving shape
-> thirteen its own explicit route instead of relying on a fallback. Full write-up
-> and reproduction steps are in the repo."
+> "Thirteen of thirteen shapes pass the correctness gate at 6.54 times the
+> reference speed. Every number here came from a logged GPU run, and two
+> optimizations that didn't work are documented with the actual reason they
+> failed, not just that they did."
 
 ---
 
 ## Recording notes
 
-- The live-run shot (section 3) is the one piece that can't be faked or skipped —
-  it's the evidence the "Technical Execution" criterion is actually looking for.
-- Keep section 4 unhurried; it's the strongest "Innovation & Problem Insight"
-  material in the whole project — a real dead end, a real measurement, a real
-  reversal of assumption (chunk size vs. precision).
-- If time is tight, section 6 is the one to trim first — it's a bonus-points line
-  in the spec, not a scored criterion on its own.
+- ~360 words total at a natural pace (~150 wpm) runs about 2:25 — under the
+  3:00 target, leaving room for slide-transition pauses and not rushing
+  slide 4/5 (the two slides with the most to explain).
+- Slide 5 is the one piece of hard evidence — don't cut away from it early;
+  let each number land before advancing.
+- Keep slides 1-3 brisk (they're intentionally light) so slides 4 and 5 get
+  the time.
