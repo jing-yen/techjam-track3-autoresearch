@@ -339,10 +339,8 @@ class _BestTransformer2(BaselineTransformer):
             opt_layers.append(blk)
         self.layers = opt_layers
 
-    def forward(self, x, valid_token_mask=None):
-        eff_mask = _effective_mask(self, valid_token_mask)
+    def _forward_impl(self, x, eff_mask):
         causal = self.config.causal
-
         n0 = self.layers[0].norm1
         normed1 = F.layer_norm(x, (x.shape[-1],), n0.weight, n0.bias, n0.eps)
 
@@ -356,29 +354,79 @@ class _BestTransformer2(BaselineTransformer):
             else:
                 out, x = fused_add_layernorm(
                     x, ffn_delta, self.final_norm.weight, self.final_norm.bias, self.final_norm.eps)
+        return out
 
+    def forward(self, x, valid_token_mask=None):
+        eff_mask = _effective_mask(self, valid_token_mask)
+        out = self._forward_impl(x, eff_mask)
         if eff_mask is not None:
             out = out.masked_fill(~valid_token_mask[..., None], 0)
         return out
 
 
 # --------------------------------------------------------------------------- #
-# "amp" impl -- plain SDPA under CUDA float16 autocast (T6).
+# "amp" impl -- plain SDPA under CUDA float16 autocast (T6) + manual CUDA
+# graph capture (U1', 2026-08-31: a shape-6 profiler trace found the same
+# CPU-dispatch-pressure signal -- "Command Buffer Full" at 39.65% of CPU
+# time, docs/research-shape6-profile.md -- that T17 already fixed on the
+# fused route via this exact mechanism, +51-244%. Independently
+# cross-checked by a collaborator's fact-checker pass, converging on the
+# same conclusion without coordination -- docs/research-round1-corrections.md).
 # Parameters and inputs remain fp32; autocast chooses eligible mixed-precision
-# kernels and unlocks flash SDPA. CPU stays on the ordinary fp32 path.
-# Inherits _BestTransformer2's Triton-fused AddNorm block, now extended to
-# BOTH residual+norm boundaries (T7 + T15) -- the fusion kernel casts to
-# fp32 internally for the reduction regardless of input dtype, so it should
-# be numerically correct whether called under fp32 or fp16 autocast;
-# verified empirically on GPU (not just assumed), see journal T7 AMP-
-# integration entry (T7) and the T15 GPU test (both boundaries).
+# kernels and unlocks flash SDPA. CPU stays on the ordinary fp32 (no-graph)
+# path. Inherits _BestTransformer2's Triton-fused AddNorm block (T7+T15) --
+# the fusion kernel casts to fp32 internally for the reduction regardless of
+# input dtype, so it is numerically correct whether called under fp32 or
+# fp16 autocast; verified empirically (journal T7 AMP-integration entry, T15
+# GPU test). The capture happens INSIDE the autocast context: autocast's
+# per-op fp16/fp32 dispatch decisions are shape/dtype-driven, not data-value-
+# driven, so they are stable across replays with different input VALUES of
+# the same shape -- capturing one pass records whichever concrete kernels
+# autocast chose, and replay reissues that exact same sequence.
+#
+# Capture is scoped to the no-padding case only, same restriction and same
+# reasoning as T17 (a captured graph is a fixed op sequence; the organizer's
+# protocol always runs at padding_ratio=0.0; a padded call falls back to the
+# always-correct eager path below).
 # --------------------------------------------------------------------------- #
 class _AMPTransformer(_BestTransformer2):
+    def __init__(self, config: TransformerConfig) -> None:
+        super().__init__(config)
+        self._graph = None
+        self._static_x = None
+        self._static_out = None
+
+    def _autocast_forward_impl(self, x, eff_mask):
+        with torch.autocast(device_type="cuda", dtype=torch.float16):
+            return self._forward_impl(x, eff_mask)
+
     def forward(self, x, valid_token_mask=None):
-        if x.is_cuda:
-            with torch.autocast(device_type="cuda", dtype=torch.float16):
-                return super().forward(x, valid_token_mask)
-        return super().forward(x, valid_token_mask)
+        if not x.is_cuda:
+            return super().forward(x, valid_token_mask)
+
+        eff_mask = _effective_mask(self, valid_token_mask)
+
+        if eff_mask is None:
+            if self._graph is None:
+                self._static_x = x.clone()
+                s = torch.cuda.Stream()
+                s.wait_stream(torch.cuda.current_stream())
+                with torch.cuda.stream(s):
+                    for _ in range(3):
+                        self._autocast_forward_impl(self._static_x, None)
+                torch.cuda.current_stream().wait_stream(s)
+
+                self._graph = torch.cuda.CUDAGraph()
+                with torch.cuda.graph(self._graph):
+                    self._static_out = self._autocast_forward_impl(self._static_x, None)
+
+            self._static_x.copy_(x)
+            self._graph.replay()
+            return self._static_out
+
+        with torch.autocast(device_type="cuda", dtype=torch.float16):
+            out = self._forward_impl(x, eff_mask)
+        return out.masked_fill(~valid_token_mask[..., None], 0)
 
 
 # --------------------------------------------------------------------------- #
