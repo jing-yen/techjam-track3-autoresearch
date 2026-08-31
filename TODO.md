@@ -237,26 +237,29 @@ to any job until this clears.** Not filed with cluster admins from this session
 (no ticket system access) — if anyone has an ops contact, worth a heads-up so it
 doesn't silently eat other people's GPU allocation the way it ate three of mine.
 
-## Open — SHAPE 6 IS NOW 83% OF THE RUNTIME AND HAS NEVER BEEN PROFILED
+## Open — shape 6 (78.8% of runtime, ALREADY PROFILED — see corrections)
 
-- **U1 — Profile shape #6. Highest-value action available, and it is cheap.**
-  `fusedcg` landing changed the landscape: #6 is **56.54 ms = 83.0% of remaining
-  wall clock**, #8 is 6.7%, everything else under 2%. **Every optimization item
-  currently in this queue targets shapes worth under 7% of the runtime.**
-  #6 is also unexplained by either ceiling: **20.8 TFLOP/s = 6.7% of the fp16
-  peak**, and ~12.2 GB of HBM traffic gives a **6.3 ms bandwidth floor against
-  56.5 ms measured — 9x above.** Neither compute nor bandwidth accounts for it.
-  M2 profiled #1, #8, #13 — never #6. `tools/profile_shapes.py` already exists;
-  point it at #6. One trace decides everything below. Full brief:
-  `docs/research-untried.md`.
+- **U1 — RETRACTED. Shape 6 was already profiled** (journal iter 53,
+  `docs/research-shape6-profile.md`, job 779400) four minutes before the brief
+  claiming otherwise was written. Share is **78.8%, not 83.0%** — shape 13 IS in
+  the leaderboard table. Corrections: `docs/research-round1-corrections.md`.
+- **U1' — REPLACES U1: apply T17's CUDA-graph capture to the amp route (shapes
+  6/8/13). Strongest lead in the project, mechanism already built.** The shape-6
+  profile shows **"Command Buffer Full" at 39.65% of CPU time** — CPU-side
+  dispatch pressure, precisely what T17's manual CUDA-graph capture already fixed
+  for shapes 9-12 (+59%/+59%/+18%/+244%). Reuse it, do not rebuild it.
+  *Falsify:* no improvement on #6 → dispatch pressure was not the binding
+  constraint there despite the signal.
 - **U2 — L2 cache blocking over the batch (locality, not memory).** Untried, and
   distinct from S5 (which chunked to FIT in HBM). #6's activation is **312 MB
   fp16 vs A100's 40 MB L2**, so every layer re-reads it from HBM. Chunk to
   **1000 → 31.2 MB, L2-resident**, and run each chunk through all 4 layers while
   it stays hot. HBM traffic ~12.2 GB → ~0.6 GB. Exact, same mechanism S5 already
   proved on #14. *Conditional on U1.*
-- **U3 — end-to-end fp16 instead of `autocast`.** M2 measured **17.1% of shape
-  8's time in dtype casting**. Autocast casts at every op boundary; cast once at
+- **U3 — end-to-end fp16 instead of `autocast`. NOW BETTER SUPPORTED:** casting
+  is **19.37% on shape 6** and **17.1% on shape 8** — ~86% of runtime between
+  them. Note autocast ALREADY keeps LayerNorm/softmax fp32 (official op lists),
+  so the win is removing per-op boundary casts, not changing precision policy. Autocast casts at every op boundary; cast once at
   block entry and back at exit, keeping LayerNorm/softmax fp32 explicitly.
   Distinct from T16 (which pre-cast *weights*; this is *activations*). Touches
   #6/#8/#13 = 90% of runtime. *Risk:* #8 is already at 88% of the atol budget —
@@ -265,8 +268,9 @@ doesn't silently eat other people's GPU allocation the way it ate three of mine.
   been combined. `torch.library.triton_op` / `capture_triton` let Inductor fuse
   *around* a custom Triton kernel. T17 used manual CUDA graphs instead — a
   different lever, not this one.
-- **U5 — weight pre-transposition** (`nn.Linear` is `x @ W.T`; pre-transpose for
-  an NN rather than NT cuBLAS variant). Cheap A/B, never run, and #6 is 86% GEMM.
+- **U5 — weight pre-transposition.** Cheap A/B, never run. (The "#6 is 86%
+  GEMM" figure previously here was **unsourced and wrong** — the profile shows
+  the fp16 GEMM kernel at 29.57% of CUDA time.)
 - **U6 — A100 L2 persistence window** (`accessPolicyWindow`). Real Ampere
   feature, absent from this project, but needs a C++ extension. Listed, not
   started.
