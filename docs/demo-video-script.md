@@ -7,14 +7,15 @@ the deck's speaker-notes panel carries this same text per slide.
 
 ## 1. Team & responsibility — ~0:00-0:15
 
-**ON SCREEN:** Slide 1 — project title, team roster (name / role / one-line
-responsibility for each of the three members).
+**ON SCREEN:** Slide 1 — TikTok TechJam lockup, project title, team roster
+with photos (name / role / one-line responsibility for each of the three
+members).
 
 **NARRATION:**
-> "Our team split the work into two layers. Jing Yen built the implementation
-> side: the agent loop, the candidate kernels, and the benchmarking
-> infrastructure. Shi Xian led research: problem analysis, the review
-> process, and the tech report."
+> "Our team split the work into two layers. Jing Yen and Brandon built the
+> implementation side: the agent loop, the candidate kernels, and the
+> benchmarking infrastructure. Shi Xian led research: problem analysis, the
+> review process, and the tech report."
 
 ---
 
@@ -45,17 +46,19 @@ on-demand / per-run lifecycle).
 
 ## 4. Agentic architecture — ~0:49-1:33
 
-**ON SCREEN:** Slide 4 — two-layer diagram (research: plan → adversarial
-review → reconcile; implementation: write candidate → benchmark + gate →
-keep/prune), connected through `TODO.md` / `journal.jsonl`.
+**ON SCREEN:** Slide 4 — system diagram: research agent (① plan → ②
+adversarial review → ③ reconcile) and implementation agent (④ execute → ⑤
+verify → ⑥ log), connected only through a shared-memory hub (`TODO.md` /
+`journal.jsonl`), with directional read/write arrows both ways.
 
 **NARRATION:**
-> "Rather than hand-tune one kernel, we built two agent layers that only
-> talk to each other through git. A research layer proposes a direction, an
-> adversarial review checks it, and the two reconcile on what's worth
-> testing next. An implementation layer writes one candidate, runs it
-> through the benchmark and correctness gate, and keeps or prunes it — the
-> next iteration reads back what happened from the same log."
+> "This is a self-improving multi-agent loop, six phases across two agents,
+> sharing no state except two git-tracked files. The research agent plans a
+> direction, an adversarial review checks it, and the two reconcile — that's
+> phases one through three. The implementation agent executes one candidate,
+> verifies it against the correctness gate, and logs the result — phases
+> four through six. The next iteration's plan reads that same log, so the
+> loop actually improves itself over time instead of repeating blind."
 
 ---
 
@@ -87,17 +90,19 @@ the reported geomean overlaid as a separate dashed line.
 
 ## 6. Wrap-up — ~2:33-2:58
 
-**ON SCREEN:** Slide 6 — two columns: what was ruled out (pretransposed
-Linear weights, native fp16 weights) and what's next (selective
-pretransposition, an optional cross-check on the original cluster), plus
+**ON SCREEN:** Slide 6 — the same five milestones from slide 5's chart, now
+as a recap table, each tagged by what kind of win it was (S-tier / Unlock /
+Rigor / Baseline), plus a one-line mention of the two ruled-out ideas and
 the repo link.
 
 **NARRATION:**
-> "Two ideas looked promising and didn't survive contact with the real
-> system — pretransposed weights regressed once stacked on CUDA graphs,
-> native fp16 weights failed correctness outright. Both are understood, not
-> just abandoned. What's left: give pretransposition a fair test where it
-> wasn't tried, and an optional cross-check on our original cluster."
+> "Ranking the five steps by what they actually bought us: the
+> fp16-and-fused-kernel change and the systematic re-route were the two real
+> speed wins. The autotune-and-shape-14 step barely moved the aggregate but
+> unblocked a shape that never completed before. And the last step wasn't
+> about speed at all — it closed a gap in our own evidence. Two other ideas
+> didn't survive contact with the real system, and both are understood, not
+> just abandoned."
 
 ---
 

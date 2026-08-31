@@ -436,7 +436,7 @@ introduced.
 |--|--|--|
 | Khoo Shi Xian | Research | Problem-statement analysis, benchmark-script audit, research queue (`TODO.md`), plan/review/reconcile loop, tech report, doc-accuracy audit (found and fixed a stale headline and a broken reproduction command pre-submission). |
 | Tong Jing Yen | Implementation | Autoresearch implementation-agent loop, candidate kernels, `bench_harness.py`, `runner.py`, cluster + RunPod integration. |
-| Brandon Kang | Team member | — |
+| Brandon Kang | Implementation | Autoresearch agent loop, candidate kernels, benchmark harness. |
 
 ## Correctness gate
 
