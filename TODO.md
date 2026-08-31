@@ -490,6 +490,20 @@ because three of the four are **not** the same problem:
   overhead profile needs checking (ideally profiled, not just assumed)
   before porting a fusion that worked elsewhere.
 
+- **K1a-persistent — NEW, built, dispatched.** `candidates/v_triton_k1a_persistent.py`:
+  same fused FFN-block kernel as K1a, but launched as a persistent kernel
+  (`grid=(min(108, num_blocks),)` + a grid-stride loop over row-blocks,
+  the standard production pattern — Triton's own official persistent-matmul
+  tutorial, and what vLLM/SGLang's kernels do) instead of one program per
+  row-block. Directly targets two real, opposite failure modes THIS
+  project already measured: K1's original `grid=(1,)` (1 of 108 SMs used,
+  ~11x slower) and T17's likely `grid=(n_rows,)` over-launch (hundreds of
+  tiny single-row programs, -30% on shapes #9/#10/#12). Real, additional
+  benefit beyond occupancy: weight tiles load ONCE per program and get
+  reused across every row-block that program handles, not once per block.
+  Same correctness invariants and size guard as K1a. CPU-fallback tested.
+  GPU test dispatched on the same shape family as K1a's rescoped test.
+
 ## Open — the measurement that unblocks the rest
 
 - **M1 — CLOSED: falsified, new leaderboard best confirmed on A100-80.**
