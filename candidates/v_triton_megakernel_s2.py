@@ -124,16 +124,33 @@ if _HAS_TRITON:
             n1b = tl.load(norm1_b_ptr + layer * D + cols).to(tl.float32)
             normed1 = xm1 * rstd1[:, None] * n1w[None, :] + n1b[None, :]
 
-            # ---- QKV projection: one [SEQ,D] @ [D,3D] GEMM ----
-            qkv_acc = tl.zeros((SEQ, 3 * D), dtype=tl.float32)
-            qkv_cols = tl.arange(0, 3 * D)
-            # weight stored as nn.Linear layout [3D, D] -> need [D, 3D] for
-            # a plain matmul; load transposed via strided pointers.
-            w_ptrs = qkv_w_ptr + layer * (3 * D) * D + qkv_cols[None, :] * D + cols[:, None]
-            w = tl.load(w_ptrs).to(tl.float32)  # [D, 3D]
-            qkv_acc = tl.dot(normed1, w, qkv_acc, input_precision="ieee")
-            qkv_bias = tl.load(qkv_b_ptr + layer * (3 * D) + qkv_cols).to(tl.float32)
-            qkv = qkv_acc + qkv_bias[None, :]  # [SEQ, 3D]
+            # ---- QKV projection: three separate [SEQ,D] @ [D,D] GEMMs ----
+            # A combined [SEQ,3D] tile needs a 3D=384-wide dimension, which
+            # is not a power of 2 -- Triton requires power-of-2 tile shapes
+            # (real compile error hit here, journal iter 35). Split into 3
+            # D=128-wide (power-of-2) GEMMs instead; qkv_w is still stored
+            # [LAYERS, 3D, D] (Q/K/V stacked along the output axis), just
+            # indexed with a static 0/D/2D row offset per projection here.
+            q_acc = tl.zeros((SEQ, D), dtype=tl.float32)
+            qw_ptrs = qkv_w_ptr + layer * (3 * D) * D + cols[None, :] * D + cols[:, None]
+            qw = tl.load(qw_ptrs).to(tl.float32)  # [D, D]
+            q_acc = tl.dot(normed1, qw, q_acc, input_precision="ieee")
+            q_bias = tl.load(qkv_b_ptr + layer * (3 * D) + cols).to(tl.float32)
+            q = q_acc + q_bias[None, :]
+
+            k_acc = tl.zeros((SEQ, D), dtype=tl.float32)
+            kw_ptrs = qkv_w_ptr + layer * (3 * D) * D + (D + cols[None, :]) * D + cols[:, None]
+            kw = tl.load(kw_ptrs).to(tl.float32)  # [D, D]
+            k_acc = tl.dot(normed1, kw, k_acc, input_precision="ieee")
+            k_bias = tl.load(qkv_b_ptr + layer * (3 * D) + D + cols).to(tl.float32)
+            k = k_acc + k_bias[None, :]
+
+            v_acc = tl.zeros((SEQ, D), dtype=tl.float32)
+            vw_ptrs = qkv_w_ptr + layer * (3 * D) * D + (2 * D + cols[None, :]) * D + cols[:, None]
+            vw = tl.load(vw_ptrs).to(tl.float32)  # [D, D]
+            v_acc = tl.dot(normed1, vw, v_acc, input_precision="ieee")
+            v_bias = tl.load(qkv_b_ptr + layer * (3 * D) + 2 * D + cols).to(tl.float32)
+            v = v_acc + v_bias[None, :]
 
             # ---- per-head causal attention, fused with the out projection ----
             # Rather than concatenating per-head contexts into one [SEQ,D]
@@ -148,9 +165,9 @@ if _HAS_TRITON:
             for h in range(HEADS):
                 # h is a Python int (HEADS is constexpr, this loop unrolls
                 # at trace time), so these are static compile-time slices.
-                q_h = qkv[:, h * HEAD_DIM:(h + 1) * HEAD_DIM]
-                k_h = qkv[:, D + h * HEAD_DIM: D + (h + 1) * HEAD_DIM]
-                v_h = qkv[:, 2 * D + h * HEAD_DIM: 2 * D + (h + 1) * HEAD_DIM]
+                q_h = q[:, h * HEAD_DIM:(h + 1) * HEAD_DIM]
+                k_h = k[:, h * HEAD_DIM:(h + 1) * HEAD_DIM]
+                v_h = v[:, h * HEAD_DIM:(h + 1) * HEAD_DIM]
 
                 scores = tl.dot(q_h, tl.trans(k_h), input_precision="ieee") * inv_sqrt_head_dim
                 scores = tl.where(causal_mask, scores, float("-inf"))
