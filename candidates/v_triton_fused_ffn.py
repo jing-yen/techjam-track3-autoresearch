@@ -61,6 +61,34 @@ except ImportError:
 
 
 if _HAS_TRITON:
+    # T7b-style autotuning: T10's first GPU attempt used a single fixed
+    # config (BLOCK_M=64, BLOCK_N=64, BLOCK_K=32) and regressed on shape #8
+    # (d_model=1024, 0.84x -- slower than baseline) while winning everywhere
+    # else. Our shapes span M from 128 (shape 2) to 1.28M rows (shape 6) and
+    # N/K from 32 to 1024 -- one fixed block size cannot be right for all of
+    # them. Triton benchmarks every config below against the actual (M,N,K)
+    # it's called with and caches the winner per shape (`key=["M","N","K"]`)
+    # -- the same mechanism torch.compile's own autotuning uses (see L3 for
+    # the one caveat: that mechanism does not dedupe identical shapes
+    # appearing at different call sites in one *compiled graph*; that
+    # doesn't apply here since this is a single eagerly-called Triton
+    # kernel, not something Inductor traces and unrolls).
+    _FFN_AUTOTUNE_CONFIGS = [
+        triton.Config({"BLOCK_M": 32, "BLOCK_N": 32, "BLOCK_K": 32}, num_warps=2, num_stages=2),
+        triton.Config({"BLOCK_M": 64, "BLOCK_N": 32, "BLOCK_K": 32}, num_warps=2, num_stages=3),
+        triton.Config({"BLOCK_M": 64, "BLOCK_N": 64, "BLOCK_K": 32}, num_warps=4, num_stages=3),
+        triton.Config({"BLOCK_M": 64, "BLOCK_N": 64, "BLOCK_K": 64}, num_warps=4, num_stages=4),
+        triton.Config({"BLOCK_M": 128, "BLOCK_N": 64, "BLOCK_K": 32}, num_warps=4, num_stages=3),
+        triton.Config({"BLOCK_M": 128, "BLOCK_N": 64, "BLOCK_K": 64}, num_warps=4, num_stages=4),
+        triton.Config({"BLOCK_M": 128, "BLOCK_N": 128, "BLOCK_K": 32}, num_warps=8, num_stages=3),
+        triton.Config({"BLOCK_M": 128, "BLOCK_N": 128, "BLOCK_K": 64}, num_warps=8, num_stages=4),
+        triton.Config({"BLOCK_M": 128, "BLOCK_N": 256, "BLOCK_K": 32}, num_warps=8, num_stages=3),
+        triton.Config({"BLOCK_M": 64, "BLOCK_N": 256, "BLOCK_K": 32}, num_warps=8, num_stages=3),
+        triton.Config({"BLOCK_M": 256, "BLOCK_N": 64, "BLOCK_K": 32}, num_warps=8, num_stages=3),
+        triton.Config({"BLOCK_M": 32, "BLOCK_N": 128, "BLOCK_K": 32}, num_warps=4, num_stages=4),
+    ]
+
+    @triton.autotune(configs=_FFN_AUTOTUNE_CONFIGS, key=["M", "N", "K"])
     @triton.jit
     def _fused_linear_gelu_kernel(
         a_ptr, b_ptr, bias_ptr, c_ptr,
@@ -129,15 +157,16 @@ if _HAS_TRITON:
         w_t = weight.t().contiguous()
 
         out = torch.empty((m, n), device=x.device, dtype=x.dtype)
-        BLOCK_M, BLOCK_N, BLOCK_K = 64, 64, 32
-        grid = (triton.cdiv(m, BLOCK_M), triton.cdiv(n, BLOCK_N))
+        # BLOCK_M/BLOCK_N/BLOCK_K/num_warps/num_stages are no longer passed
+        # here -- @triton.autotune injects the winning config's values (and
+        # its own grid, since grid is now a lambda over META below).
+        grid = lambda META: (triton.cdiv(m, META["BLOCK_M"]), triton.cdiv(n, META["BLOCK_N"]))
         _fused_linear_gelu_kernel[grid](
             x2d, w_t, bias, out,
             m, n, k,
             x2d.stride(0), x2d.stride(1),
             w_t.stride(0), w_t.stride(1),
             out.stride(0), out.stride(1),
-            BLOCK_M=BLOCK_M, BLOCK_N=BLOCK_N, BLOCK_K=BLOCK_K,
         )
         return out.view(*orig_shape[:-1], n)
 else:
