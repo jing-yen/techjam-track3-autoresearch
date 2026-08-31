@@ -763,8 +763,25 @@ because three of the four are **not** the same problem:
   that's a strong, defensible claim for the report; if not, better to
   find out now.
 
-- **T7b — OPEN, LOWER PRIORITY than S8/S9 above (targets a gain smaller
-  than the documented noise floor — do S8/S9 first).** Same textbook next step
+- **T7b — CLAIMED (opus-1), reprioritized and dispatched.** Original
+  framing (below) deprioritized this as targeting a gain smaller than
+  noise — true when this kernel was a modest contributor. No longer
+  uniformly true: shape #6's real profiler trace (job `779400`,
+  `docs/research-shape6-profile.md`) found this SAME kernel at **28.45%
+  of CUDA time**, comparable to the fp16 GEMM itself. Built as
+  `candidates/v_triton_addnorm2_autotune.py` — deliberately standalone,
+  NOT touching `v_router2.py`'s shared kernel directly, since that kernel
+  is now leaderboard-critical (T17's confirmed win + the in-flight
+  amp-route CUDA graph work both depend on it) and stacking an unverified
+  change on shared code while unsupervised is a real risk. `@triton.autotune`
+  over num_warps∈{1,2,4,8}, num_stages∈{1,2,4}, keyed on `n_cols` (only 3
+  distinct values across all shapes: 32, 128, 1024). CPU-fallback tested.
+  GPU test dispatched on all 13 official-safe shapes. **Only integrate
+  into `v_router2.py` if it wins cleanly AND the amp-route CUDA graph work
+  is independently confirmed stable first** — do not stack two unverified
+  changes on the same shared, leaderboard-critical kernel at once.
+- **T7b (original framing, now superseded by the CLAIMED entry above) —
+  targets a gain smaller than the documented noise floor.** Same textbook next step
   Triton's own tutorials use for exactly this kernel shape (a reduction +
   elementwise kernel): wrap `_fused_add_layernorm_kernel` with
   `@triton.autotune(configs=[...], key=["n_cols"])`, sweeping a small grid
