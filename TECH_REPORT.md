@@ -302,7 +302,16 @@ layer (T7 + T15). Shape 14 is excluded from this sweep for a different reason
 than memory — it *runs* (§8), but has no reference to compare against, so it
 cannot be scored on this correctness-gated table at all.
 
-Aggregates: **median 2.98x, geometric mean 3.81x** over the 13 shapes with a
+Aggregates: **median 3.71x, geometric mean 4.02x** (confirmed, SoC A100-80 PCIe,
+journal iter 52, job `779413`). A provisional **5.36x / 6.46x** exists for
+`v_router2_autotuned.py` but was measured on RunPod A100-SXM4-80GB (iter 58,
+`slurm_job: null`) and is **not** reported as our result — it is unconfirmed on
+canonical hardware and its per-shape correctness margins were never recorded.
+
+**The per-shape table above predates this number** (job `router2_triton_confirm2`,
+iter 30) and recomputes to 2.99x/3.72x. It needs regenerating from the iter-52
+sweep's raw harness JSON; `per_shape` is empty on every ledger row, so it cannot
+be regenerated mechanically. Stated rather than silently left inconsistent. over the 13 shapes with a
 reference.
 
 **Where the remaining time is.** Shape 8 and shape 6 are still the largest

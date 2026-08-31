@@ -204,7 +204,15 @@ nothing else, which is what "an unfused-kernel fix" should look like.
 | 13 | 64 | 1024 | 128 | 4 | ✅ | 43.236 | 3.294 | **13.12x** | amp (fp16 + Triton AddNorm x2) |
 | 14 | 32 | 100000 | 1024 | 16 | see below | — | — | — | see limitations |
 
-**Median speedup 2.98x, geometric mean 3.81x**, across all 13 shapes that
+**Median speedup 3.71x, geometric mean 4.02x** (confirmed, NUS SoC A100-80 PCIe,
+journal iter 52, job `779413`)
+
+> **A faster provisional result exists and is deliberately not the headline.**
+> `candidates/v_router2_autotuned.py` measured **5.36x / 6.46x** — but on
+> **RunPod A100-SXM4-80GB, a different physical GPU** (journal iter 58,
+> `slurm_job: null`). The ratio is honest (optimized vs baseline on the same
+> device), but it is unconfirmed on our canonical hardware and its per-shape
+> correctness margins were never recorded. We report the confirmed number., across all 13 shapes that
 produced a reference (includes shape 6, confirmed feasible in S4 — the
 sweep now covers every official shape except #14). All 13 pass the
 correctness gate; worst max_abs 0.00176 (shape 8), still under the 0.002
