@@ -1,0 +1,166 @@
+<title>Route Table</title>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@500;650&family=IBM+Plex+Mono:wght@500;600&display=swap">
+<style>
+  .viz-root {
+    color-scheme: light;
+    --surface-1:      #fcfcfb;
+    --surface-2:      #f3f2ef;
+    --text-primary:   #0b0b0b;
+    --text-secondary: #52514e;
+    --text-muted:     #85837c;
+    --grid:           #e4e2dc;
+    --accent:         #2a78d6;
+    --accent-wash:    rgba(42, 120, 214, 0.10);
+    --tech-amp:        #2a78d6;
+    --tech-fusedcg:     #eb6834;
+    --tech-reduce:      #1baf7a;
+    --tech-chunked:     #b8860a;
+    --status-new-bg:    rgba(42, 120, 214, 0.12);
+    --status-new-fg:    #2a78d6;
+    --status-same-fg:   #85837c;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:where(:not([data-theme="light"])) .viz-root {
+      color-scheme: dark;
+      --surface-1:      #1a1a19;
+      --surface-2:      #232320;
+      --text-primary:   #ffffff;
+      --text-secondary: #c3c2b7;
+      --text-muted:     #8f8d84;
+      --grid:           #35342f;
+      --accent:         #3987e5;
+      --accent-wash:    rgba(57, 135, 229, 0.14);
+      --tech-amp:        #3987e5;
+      --tech-fusedcg:     #d95926;
+      --tech-reduce:      #199e70;
+      --tech-chunked:     #d6a828;
+      --status-new-bg:    rgba(57, 135, 229, 0.16);
+      --status-new-fg:    #3987e5;
+      --status-same-fg:   #8f8d84;
+    }
+  }
+  :root[data-theme="dark"] .viz-root {
+    color-scheme: dark;
+    --surface-1:      #1a1a19;
+    --surface-2:      #232320;
+    --text-primary:   #ffffff;
+    --text-secondary: #c3c2b7;
+    --text-muted:     #8f8d84;
+    --grid:           #35342f;
+    --accent:         #3987e5;
+    --accent-wash:    rgba(57, 135, 229, 0.14);
+    --tech-amp:        #3987e5;
+    --tech-fusedcg:     #d95926;
+    --tech-reduce:      #199e70;
+    --tech-chunked:     #d6a828;
+    --status-new-bg:    rgba(57, 135, 229, 0.16);
+    --status-new-fg:    #3987e5;
+    --status-same-fg:   #8f8d84;
+  }
+  * { box-sizing: border-box; }
+  html, body { background: var(--surface-1); margin: 0; }
+  body { font-family: "IBM Plex Sans", -apple-system, sans-serif; }
+  .viz-root { background: var(--surface-1); padding: 40px 48px 36px; max-width: 900px; margin: 0 auto; }
+  h1 { font-size: 22px; font-weight: 650; color: var(--text-primary); margin: 0 0 4px; text-wrap: balance; letter-spacing: -0.01em; }
+  .subtitle { font-size: 13.5px; color: var(--text-secondary); margin: 0 0 20px; font-family: "IBM Plex Mono", ui-monospace, monospace; }
+  .legend { display: flex; flex-wrap: wrap; gap: 18px; margin-bottom: 22px; font-size: 12px; color: var(--text-secondary); }
+  .legend-item { display: flex; align-items: center; gap: 6px; }
+  .legend-swatch { width: 9px; height: 9px; border-radius: 2px; }
+  .legend-dot { width: 7px; height: 7px; border-radius: 50%; display: inline-block; }
+  .table-wrap { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  thead th {
+    text-align: left; font-size: 11px; font-weight: 600; text-transform: uppercase;
+    letter-spacing: 0.03em; color: var(--text-muted); padding: 0 10px 8px; border-bottom: 1px solid var(--grid);
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+  }
+  thead th.num { text-align: right; }
+  tbody td { padding: 9px 10px; border-bottom: 1px solid var(--grid); color: var(--text-secondary); vertical-align: middle; }
+  tbody tr:last-child td { border-bottom: none; }
+  .shape-id { font-family: "IBM Plex Mono", ui-monospace, monospace; font-weight: 600; color: var(--text-primary); }
+  .config { font-family: "IBM Plex Mono", ui-monospace, monospace; font-size: 11.5px; color: var(--text-muted); white-space: nowrap; }
+  .badge {
+    display: inline-flex; align-items: center; gap: 6px; padding: 3px 9px 3px 7px;
+    border-radius: 999px; font-size: 11.5px; font-weight: 600; font-family: "IBM Plex Mono", ui-monospace, monospace;
+  }
+  .badge .dot { width: 7px; height: 7px; border-radius: 50%; flex: none; }
+  .speedup { font-family: "IBM Plex Mono", ui-monospace, monospace; font-weight: 600; color: var(--text-primary); text-align: right; }
+  .was { font-family: "IBM Plex Mono", ui-monospace, monospace; font-size: 11px; color: var(--text-muted); text-align: right; }
+  .status { text-align: center; }
+  .status-pill {
+    display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 10.5px; font-weight: 600;
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+  }
+  .status-pill.new { background: var(--status-new-bg); color: var(--status-new-fg); }
+  .status-pill.same { color: var(--status-same-fg); }
+  .footnote { margin-top: 18px; font-size: 12px; color: var(--text-muted); line-height: 1.5; }
+</style>
+
+<div class="viz-root">
+  <h1>All 14 shapes, one route table</h1>
+  <p class="subtitle">candidates/v_router2_autotuned.py — RunPod A100-SXM4-80GB, full 1-13 sweep, official protocol</p>
+
+  <div class="legend">
+    <div class="legend-item"><span class="legend-swatch" style="background:var(--tech-amp)"></span>amp (fp16 + CUDA graph)</div>
+    <div class="legend-item"><span class="legend-swatch" style="background:var(--tech-fusedcg)"></span>fusedcg (fused QKV + CUDA graph)</div>
+    <div class="legend-item"><span class="legend-swatch" style="background:var(--tech-reduce)"></span>reduce (torch.compile)</div>
+    <div class="legend-item"><span class="legend-swatch" style="background:var(--tech-chunked)"></span>chunked14amp (custom)</div>
+    <div class="legend-item"><span class="legend-dot" style="background:var(--status-new-fg)"></span>re-routed today</div>
+  </div>
+
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Shape</th>
+          <th>Technique</th>
+          <th class="num">Speedup</th>
+          <th class="num">Was</th>
+          <th class="status">Status</th>
+        </tr>
+      </thead>
+      <tbody id="rows"></tbody>
+    </table>
+  </div>
+
+  <p class="footnote">8 of 14 shapes changed today, after a systematic 6-way comparison (best / amp / compile / reduce / fused / fusedcg) found the route table predated the AddNorm-fusion, CUDA-graph, and autotune work that later made <span style="font-family:'IBM Plex Mono',monospace">amp</span>/<span style="font-family:'IBM Plex Mono',monospace">fusedcg</span> much stronger. Shape 14 previously fell through to <span style="font-family:'IBM Plex Mono',monospace">compile</span>, which never finished for that shape at all.</p>
+</div>
+
+<script>
+(function () {
+  const rows = [
+    { n: 1,  tech: "amp",          val: "4.84x",     was: "2.60x",  status: "new" },
+    { n: 2,  tech: "fusedcg",      val: "14.13x",    was: "7.66x",  status: "new" },
+    { n: 3,  tech: "fusedcg",      val: "11.29x",    was: "10.03x", status: "new" },
+    { n: 4,  tech: "reduce",       val: "9.37x",     was: "—",      status: "same" },
+    { n: 5,  tech: "amp",          val: "3.60x",     was: "2.77x",  status: "new" },
+    { n: 6,  tech: "amp",          val: "4.05x",     was: "—",      status: "same" },
+    { n: 7,  tech: "amp",          val: "7.58x",     was: "5.84x",  status: "new" },
+    { n: 8,  tech: "amp",          val: "1.80x",     was: "—",      status: "same" },
+    { n: 9,  tech: "fusedcg",      val: "5.11x",     was: "—",      status: "same" },
+    { n: 10, tech: "fusedcg",      val: "5.71x",     was: "—",      status: "same" },
+    { n: 11, tech: "amp",          val: "5.36x",     was: "3.45x",  status: "new" },
+    { n: 12, tech: "fusedcg",      val: "11.09x",    was: "—",      status: "same" },
+    { n: 13, tech: "amp",          val: "14.16x",    was: "~4.03x", status: "new" },
+    { n: 14, tech: "chunked14amp", val: "~8.1s/pass", was: "never finished", status: "new" },
+  ];
+
+  const labels = {
+    amp: "amp", fusedcg: "fusedcg", reduce: "reduce", chunked14amp: "chunked14amp",
+  };
+
+  const tbody = document.getElementById("rows");
+  rows.forEach(r => {
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+      <td class="shape-id">#${r.n}</td>
+      <td><span class="badge" style="background:color-mix(in srgb, var(--tech-${r.tech}) 14%, transparent); color:var(--tech-${r.tech})"><span class="dot" style="background:var(--tech-${r.tech})"></span>${labels[r.tech]}</span></td>
+      <td class="speedup">${r.val}</td>
+      <td class="was">${r.was === "—" ? "—" : "was " + r.was}</td>
+      <td class="status">${r.status === "new" ? '<span class="status-pill new">RE-ROUTED</span>' : '<span class="status-pill same">confirmed</span>'}</td>
+    `;
+    tbody.appendChild(tr);
+  });
+})();
+</script>

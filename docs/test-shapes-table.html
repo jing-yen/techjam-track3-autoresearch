@@ -1,0 +1,142 @@
+<title>Test Shapes</title>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@500;650&family=IBM+Plex+Mono:wght@500;600&display=swap">
+<style>
+  .viz-root {
+    color-scheme: light;
+    --surface-1:      #fcfcfb;
+    --surface-2:      #f3f2ef;
+    --text-primary:   #0b0b0b;
+    --text-secondary: #52514e;
+    --text-muted:     #85837c;
+    --grid:           #e4e2dc;
+    --accent:         #2a78d6;
+    --accent-wash:    rgba(42, 120, 214, 0.10);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:where(:not([data-theme="light"])) .viz-root {
+      color-scheme: dark;
+      --surface-1:      #1a1a19;
+      --surface-2:      #232320;
+      --text-primary:   #ffffff;
+      --text-secondary: #c3c2b7;
+      --text-muted:     #8f8d84;
+      --grid:           #35342f;
+      --accent:         #3987e5;
+      --accent-wash:    rgba(57, 135, 229, 0.14);
+    }
+  }
+  :root[data-theme="dark"] .viz-root {
+    color-scheme: dark;
+    --surface-1:      #1a1a19;
+    --surface-2:      #232320;
+    --text-primary:   #ffffff;
+    --text-secondary: #c3c2b7;
+    --text-muted:     #8f8d84;
+    --grid:           #35342f;
+    --accent:         #3987e5;
+    --accent-wash:    rgba(57, 135, 229, 0.14);
+  }
+  * { box-sizing: border-box; }
+  html, body { background: var(--surface-1); margin: 0; }
+  body { font-family: "IBM Plex Sans", -apple-system, sans-serif; }
+  .viz-root { background: var(--surface-1); padding: 44px 52px 40px; max-width: 900px; margin: 0 auto; }
+  h1 { font-size: 23px; font-weight: 650; color: var(--text-primary); margin: 0 0 4px; text-wrap: balance; letter-spacing: -0.01em; }
+  .subtitle { font-size: 13.5px; color: var(--text-secondary); margin: 0 0 28px; font-family: "IBM Plex Mono", ui-monospace, monospace; }
+
+  .table-scroll { overflow-x: auto; border-radius: 10px; border: 1px solid var(--grid); }
+  table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+  thead th {
+    text-align: left; font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-size: 10.5px; letter-spacing: 0.04em; text-transform: uppercase;
+    color: var(--text-muted); font-weight: 500;
+    padding: 12px 14px; background: var(--surface-2);
+    border-bottom: 1px solid var(--grid);
+    white-space: nowrap;
+  }
+  thead th.num, tbody td.num { text-align: right; }
+  tbody td {
+    padding: 10px 14px; color: var(--text-secondary);
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-variant-numeric: tabular-nums;
+    border-bottom: 1px solid var(--grid);
+    white-space: nowrap;
+  }
+  tbody td.idx { color: var(--text-primary); font-weight: 600; }
+  tbody tr:last-child td { border-bottom: none; }
+  tbody tr:nth-child(even) { background: color-mix(in srgb, var(--surface-2) 55%, transparent); }
+  tbody tr:hover { background: var(--accent-wash); }
+
+  tbody tr.callout td { color: var(--text-primary); }
+  tbody tr.callout td.idx { color: var(--accent); }
+  tbody tr.callout { background: var(--accent-wash); }
+  tbody tr.callout:hover { background: var(--accent-wash); }
+
+  .footnote { margin-top: 18px; font-size: 12.5px; color: var(--text-muted); line-height: 1.5; }
+  .footnote b { color: var(--text-secondary); font-family: "IBM Plex Mono", ui-monospace, monospace; }
+</style>
+
+<div class="viz-root">
+  <h1>The 14 fixed test shapes</h1>
+  <p class="subtitle">TikTok TechJam 2026 Track 3 — organizer-specified, causal attention throughout</p>
+
+  <div class="table-scroll">
+    <table>
+      <thead>
+        <tr>
+          <th>#</th>
+          <th class="num">Batch Size</th>
+          <th class="num">QKV Dim</th>
+          <th class="num">Heads</th>
+          <th class="num">Seq Len</th>
+          <th class="num">Layers</th>
+          <th>Causal</th>
+          <th class="num">FFN Dim</th>
+        </tr>
+      </thead>
+      <tbody id="rows"></tbody>
+    </table>
+  </div>
+
+  <p class="footnote">Shape 14 (highlighted) is the outlier — a 100,000-token sequence length needs roughly
+    <b>18.6 TB</b> for a naive unchunked forward pass, so it's the one shape that needed a different technique
+    (exact batch-chunking) just to run at all, not merely to run faster.</p>
+</div>
+
+<script>
+(function () {
+  const shapes = [
+    [1,  64,    128,  4,  128,    4, 128],
+    [2,  1,     128,  4,  128,    4, 128],
+    [3,  4,     128,  4,  128,    4, 128],
+    [4,  16,    128,  4,  128,    4, 128],
+    [5,  128,   128,  4,  128,    4, 128],
+    [6,  10000, 128,  4,  128,    4, 128],
+    [7,  64,    32,   4,  128,    4, 32],
+    [8,  64,    1024, 4,  128,    4, 1024],
+    [9,  64,    128,  1,  128,    4, 128],
+    [10, 64,    128,  2,  128,    4, 128],
+    [11, 64,    128,  16, 128,    4, 128],
+    [12, 64,    128,  4,  32,     4, 128],
+    [13, 64,    128,  4,  1024,   4, 128],
+    [14, 32,    1024, 16, 100000, 2, 1024],
+  ];
+  const fmt = n => n.toLocaleString("en-US");
+  const rows = document.getElementById("rows");
+  shapes.forEach(([id, batch, dmodel, heads, seq, layers, ffn]) => {
+    const tr = document.createElement("tr");
+    if (id === 14) tr.className = "callout";
+    tr.innerHTML = `
+      <td class="idx">${id}</td>
+      <td class="num">${fmt(batch)}</td>
+      <td class="num">${fmt(dmodel)}</td>
+      <td class="num">${heads}</td>
+      <td class="num">${fmt(seq)}</td>
+      <td class="num">${layers}</td>
+      <td>TRUE</td>
+      <td class="num">${fmt(ffn)}</td>
+    `;
+    rows.appendChild(tr);
+  });
+})();
+</script>

@@ -519,12 +519,24 @@ class _AMPNativeFP16Transformer(_BestTransformer2):
     def __init__(self, config: TransformerConfig) -> None:
         super().__init__(config)
         self._graph = None
+        self._fp16_ready = False
         self._static_x = None
         self._static_out = None
 
     def forward(self, x, valid_token_mask=None):
         if not x.is_cuda:
             return super().forward(x, valid_token_mask)
+
+        # LAZY, not in copy_model_weights: bench_harness.py calls
+        # `optimized.to(device=device, dtype=dtype).eval()` AFTER
+        # copy_model_weights (dtype = harness's --dtype, float32 here) --
+        # that silently reconverts everything back to fp32, undoing any
+        # weight-dtype change a candidate's custom copy_model_weights makes.
+        # Converting here, on first forward(), happens strictly after that
+        # reset, so it survives.
+        if not self._fp16_ready:
+            self.half()
+            self._fp16_ready = True
 
         eff_mask = _effective_mask(self, valid_token_mask)
 
@@ -1015,15 +1027,12 @@ def copy_model_weights(baseline, optimized: "UserOptimizedTransformer") -> None:
     else:
         import torch_transformer_benchmark as ttb
         ttb.copy_model_weights(baseline, optimized._impl, strict=True)
-        if optimized._impl_name == "amp_fp16" and torch.cuda.is_available():
-            # Copy in fp32 (exact match to baseline) first, THEN downcast --
-            # never construct/copy weights directly in fp16, which would lose
-            # precision before the correctness comparison even starts. CUDA-
-            # gated: CPU fp16 kernel support is poor/absent for several ops
-            # here (LayerNorm etc.), and _AMPNativeFP16Transformer.forward()
-            # already routes CPU calls through the untouched fp32 parent path
-            # (super().forward()), so CPU weights must stay fp32 to match.
-            optimized._impl.half()
+        # NOTE: intentionally NOT calling .half() here for "amp_fp16" -- see
+        # _AMPNativeFP16Transformer.forward()'s docstring comment: this
+        # function's effect on dtype gets silently undone by bench_harness.py's
+        # own `optimized.to(device=device, dtype=dtype).eval()` call, which
+        # runs AFTER copy_model_weights. The conversion happens lazily on
+        # first forward() instead, which runs after that reset.
 
 
 class UserOptimizedTransformer(BaselineTransformer):
