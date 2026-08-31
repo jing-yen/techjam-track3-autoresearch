@@ -634,6 +634,25 @@ because three of the four are **not** the same problem:
   §3.5 reflection. Do not pursue fp16/H100/chunking (rubric §3.3 puts
   production-grade work out of scope).
 
+- **S5-chunksize — CLAIMED (opus-1), dispatched.** `v_chunked14.py`'s own
+  docstring math shows `CHUNK_SIZE=4` leaves ~44GB of the 79.25GB budget
+  unused (peak ~35GB: 10.7GB working + 24.4GB fixed input/output) — chosen
+  to safely clear the original ~6GB OOM overage, never tuned for speed.
+  Two new, untested variants dispatched to isolate the chunk-size effect
+  from precision: `candidates/v_chunked14_chunk8.py` (CHUNK_SIZE=8, fp32,
+  isolates chunk-size alone) and `candidates/v_chunked14_amp16.py`
+  (CHUNK_SIZE=16 + fp16 autocast, pushing further on
+  `v_chunked14_amp.py`'s own suggestion — that file exists, chunk=8+fp16,
+  but was **never actually run on GPU**: zero mentions in
+  `journal.jsonl`/`TODO.md` before this entry, found by checking rather
+  than assuming). All three (chunk8, amp existing, amp16) plus the
+  chunk=4 baseline dispatched together: correctness on shapes #8/#13
+  (which have references) plus real wall-clock time on shape #14 itself
+  for each. Note shape #14 sits outside the primary scored metric (no
+  reference exists to gate it into the 13-shape median/geomean), so this
+  is real but lower-priority than leaderboard-affecting work — dispatched
+  opportunistically while other jobs queue.
+
 ## Open — optimization, remaining
 
 - **T6 — CONFIRMED ON A100-80** (job `step4_confirm_a80`, journal iter 21).
