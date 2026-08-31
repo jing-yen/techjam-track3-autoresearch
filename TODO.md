@@ -121,6 +121,29 @@ avoid its measured asymmetric-kernel correctness drift.
   Full analysis incl. why sparse/linear attention is disqualified:
   `docs/research-shape14.md`.
 
+## Open — kernel frontier (research pass, 2026-08-31)
+
+- **K1 — Fused whole-block Triton kernel for the S=128/d=128 family (scoped
+  megakernel). The one creative direction with headroom >> noise floor.**
+  Shape 2 runs at 0.32 TFLOP/s — under 1% of peak; the gap is ~40-60 kernel
+  launches per forward. At S=128/d=128, attention per (b,h) fits in SMEM (56 KB)
+  and one layer's ENTIRE weights are 192 KB fp16. One Triton kernel per block →
+  4 launches per forward. Literature: Hazy Research Llama-1B megakernel,
+  AutoMegaKernel (arXiv:2606.09682). *Time-box:* one attempt, shape-2 target
+  only, AFTER S8 is queued. *Falsify:* <20% win over reduce's 0.374 ms → stop,
+  cite as "path identified" in the report. Full brief:
+  `docs/research-kernel-frontier.md`.
+- **K2 — cuBLASLt fused GELU_BIAS epilogue for the FFN (T10 without writing a
+  GEMM).** Ampere exposes single-kernel bias+GELU fusions; torch-cublas-hgemm
+  wraps gelu(A@B^T+bias) directly. **GATE FIRST: verify cuBLASLt's GELU is
+  erf-exact, not tanh — tanh fails the correctness contract** (PROGRAM.md #1).
+- **K3 — split-K attention for #9 — BOUNDED, DO NOT BUILD.** Attention is 14%
+  of #9; max whole-layer gain ~1.09x, under the noise floor. Logged as
+  considered.
+- **PagedAttention — REJECTED on mechanism.** Solves KV-cache fragmentation in
+  multi-request decode serving; we have no KV cache, no decode loop, no
+  concurrency. Would add overhead, remove nothing.
+
 ## Open — post-S1 follow-ups
 
 Read `docs/research-sub2x.md` for the full derivation. Summary of the causes,
