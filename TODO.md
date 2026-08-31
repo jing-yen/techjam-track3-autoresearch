@@ -401,6 +401,29 @@ because three of the four are **not** the same problem:
   overhead, not compute, still dominates one of the small shapes after
   everything else lands.
 
+- **S6 — OPEN, root cause unfixed even though the current symptom is
+  patched.** (`docs/research-batch2.md`/`research-batch3.md`, never
+  formally posted as a claim-board item until now). 31 of 32
+  `journal.jsonl` rows have no structured `per_shape` array — every
+  result table in `README.md`/`TECH_REPORT.md` has been *hand-transcribed*
+  from prose numbers each time the leaderboard moved, not mechanically
+  regenerated from the ledger. **Checked directly (2026-08-31): the
+  README table is NOT currently stale** — it already carries the full
+  2.99x/3.72x, 13/13-shape data with correct routing labels (synced by
+  hand in commit `ea789ef`) — so the specific staleness `research-batch3.md`
+  flagged is fixed for now. **But the mechanism that keeps it in sync
+  doesn't exist**, so it will drift again the next time any candidate's
+  numbers change (S8's own repeat-sweeps, T10, T11, or anything else in
+  this backlog that lands). **Action:** either (a) fix `bench_harness.py`'s
+  postmortem/logging step to actually populate `eval.per_shape` as a real
+  array (schema already exists per `AGENTS.md` §4, just never populated),
+  so future updates can regenerate tables mechanically instead of by hand,
+  or (b) at minimum, add a comment/checklist item to the "guarded best
+  update" procedure in `AGENTS.md` §2 reminding whoever updates
+  `leaderboard.md` to also re-sync `README.md`'s table in the same commit,
+  so the two don't diverge silently again. (a) is the real fix; (b) is the
+  cheap stopgap if there's no time for (a).
+
 ## Literature review cross-check (`~/Downloads/deep-research-report.md`)
 
 A deep-research survey of the transformer-kernel-optimization literature
