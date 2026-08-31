@@ -200,12 +200,17 @@ doesn't silently eat other people's GPU allocation the way it ate three of mine.
   T10 itself). Safe by construction: `v_router2` only routes to a winner,
   so a losing K1a can't regress the leaderboard. Kill criteria pre-agreed
   (<20% win over routed `reduce` on #2, correctness bug unfixed in 30min,
-  or 4h total) — honour them, don't extend post-hoc. **UNCLAIMED as of this
-  entry** — three-agent lit pass (`docs/research-agent-findings.md`)
-  independently confirms my K1 falsification transfers to A100 generally
-  (AutoMegaKernel 0.55-0.79x, Hopper-gated), so K1a's narrower small-shape
-  bet is the only live version of this idea; whoever picks it up, read
-  `docs/k1-spec.md` build order (K1a first, K1b/K1c only if K1a wins).
+  or 4h total) — honour them, don't extend post-hoc. Three-agent lit pass
+  (`docs/research-agent-findings.md`) independently confirms my K1
+  falsification transfers to A100 generally (AutoMegaKernel 0.55-0.79x,
+  Hopper-gated), so K1a's narrower small-shape bet is the only live
+  version of this idea. **CLAIMED (opus-1) — `candidates/v_triton_k1a_ffn.py`
+  written, CPU-fallback-tested (13/13 structural), GPU correctness+speed
+  test dispatched on shape #2.** Autotuned over BLOCK_M in {8,16,32,64,128}
+  (M=128 total rows for shape #2, B=1×S=128) — one Triton kernel per layer
+  fusing all 5 FFN-block ops (LayerNorm reduction, both GEMMs via
+  `input_precision="ieee"` per T10's fix, erf GELU, residual add). Timer
+  starts now against the pre-agreed kill criteria.
 
 - **K1 (original whole-model design) — CLOSED: real working kernel built,
   correctness proven, falsified on speed. Do not resume without a
@@ -276,17 +281,25 @@ doesn't silently eat other people's GPU allocation the way it ate three of mine.
   them as distinct epilogues `GELU`/`GELU_taylor`; cuBLASLt exposes only
   the unqualified one; corroborated by an unchallenged report on cutlass
   discussion #700) — would risk the correctness gate for no proven upside.
-  **K2' — NEW, replaces K2, UNCLAIMED.** Route the same Linear+GELU fusion
-  through Triton/Inductor instead of cuBLASLt — erf-safe by construction
-  since Triton computes `erf` natively. `epilogue_fusion=True` is already
-  Inductor's default; the open question is just whether our GEMMs are
-  actually landing on the Triton backend or falling back to ATEN for the
-  `compile`/`reduce` routes. Action: check `max_autotune_gemm_backends`,
-  or profile (M2-style) to confirm which backend already won. Low risk,
-  low cost — but note T10/K1a's own results suggest a hand-fused kernel's
-  ceiling here is small once the underlying GEMM is the fixed cost (M2:
-  GELU is 1.92% of shape 8's time), so treat this as a "confirm we're not
-  leaving something on the table" check, not an expected big win.
+  **K2' — half-answered for free from K4's own log (job 778517), no new
+  GPU time needed for this part.** Inductor's own max-autotune GEMM
+  competition (visible in the AUTOTUNE lines K4's diagnostic already
+  captured) already tries Triton candidates for our exact GEMM shapes and
+  picks ATen's `bias_addmm` as the winner: `addmm(128x128,128x128,128x128)`
+  — ATen 0.0123ms vs the best Triton candidate 0.0143ms (~17% slower, not a
+  landslide, but ATen wins); `addmm(8192x128,8192x128,128x128)` — ATen
+  0.0358ms vs Triton 0.0481ms. So the "is Triton being wrongly skipped"
+  half of K2' is answered: **no, it's correctly NOT chosen, on real
+  autotune data** — nothing being left on the table by a backend
+  misconfiguration. **Still open, genuinely unanswered:** whether fusing
+  GELU into Triton's epilogue (saving ATen's separate pointwise-GELU
+  kernel launch after `bias_addmm`) could still tip the *total* (GEMM+GELU)
+  time below ATen's 2-kernel sequence even though the raw GEMM alone
+  loses — this is exactly what T10 tested, but against plain `best.py`,
+  never against `compile`/`reduce`'s own already-autotuned baseline.
+  `tools/check_k2prime_backend.py` (new) dumps Inductor's generated code
+  via `TORCH_LOGS=output_code` to see whether GELU already shows up fused
+  into a pointwise kernel or stays separate — dispatched alongside K1a.
 - **K3 — split-K attention for #9 — BOUNDED, DO NOT BUILD.** Attention is 14%
   of #9; max whole-layer gain ~1.09x, under the noise floor. Logged as
   considered.
@@ -530,8 +543,9 @@ because three of the four are **not** the same problem:
   reduction, so it's solving the wrong problem on this specific shape.
   T10 (fp32) is a better structural fit for shapes that don't route to
   `amp` (baseline already fp32 there, T10's bandwidth/launch savings are
-  real). **Still open:** profile #1 (small) and #13 (long-seq) too, for
-  the full 2-3-shape picture originally scoped.
+  real). **Dispatched:** `tools/profile_shapes.py --shapes 1,13` (generalized
+  from `profile_shape8.py`) to finish the originally-scoped 2-3-shape
+  picture, running alongside K1a/K2'.
 
 - **T10 — LANDED for non-amp shapes, CLOSED (do-not-pursue further) for
   the 3 amp-routed shapes (#6/#8/#13).** `candidates/v_triton_fused_ffn.py`:
