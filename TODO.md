@@ -121,10 +121,47 @@ avoid its measured asymmetric-kernel correctness drift.
   Full analysis incl. why sparse/linear attention is disqualified:
   `docs/research-shape14.md`.
 
+## Cluster notice — node `xgpj0` (a100-80) has a broken CUDA/torch env, exclude it
+
+Discovered while dispatching K4 (2026-08-31, ~this entry's timestamp). Any job
+landing on `xgpj0` fails at `import torch` with `OSError: .../libtorch_global_deps.so:
+cannot open shared object file: No such file or directory` — even though the file
+exists, has correct permissions, and reads fine via plain `open()`/`ldd` (`ldd`
+reports zero missing deps). This is NOT a code or env-setup bug: it's node-local
+(confirmed by rerunning the identical command on `xgph1`, which works cleanly,
+`torch 2.10.0+cu128, cuda available=True`). Reproduced 3x on `xgpj0` (jobs
+778481/778487/778494, both a fresh `sbatch` and an interactive `srun`), including
+with `tools/profile_shape8.py`, which succeeded on a different node earlier the
+same day — ruling out "the env was always broken." Likely a stale/corrupted
+StorPool NFS mount cache local to that one node.
+**Action for everyone: add `#SBATCH --exclude=xgpj0` (or `--nodelist=<known-good>`)
+to any job until this clears.** Not filed with cluster admins from this session
+(no ticket system access) — if anyone has an ops contact, worth a heads-up so it
+doesn't silently eat other people's GPU allocation the way it ate three of mine.
+
 ## Open — kernel frontier (research pass, 2026-08-31)
 
-- **K1 — CLOSED: real working kernel built, correctness proven, falsified
-  on speed. Do not resume without a fundamentally different design.**
+- **K1a — REINSTATED with a bounded 4h time-box, narrower scope than the
+  closed K1 below.** `docs/k1-spec.md` (sxkhoo, user-approved despite the
+  negative literature). NOT the whole-model single-CTA design that was
+  falsified — targets shape #2's specific 97%-non-arithmetic overhead
+  (374us / ~40 kernels = 9.3us/kernel, on a 128x128x128 GEMM that's only
+  0.22us of real math) with a staged fused-FFN-block kernel
+  (`norm2->ffn_in->GELU->ffn_out->residual`, no softmax/causal-mask/
+  per-head-loop — this is T10 scoped down to where cuBLAS is weakest, not
+  T10 itself). Safe by construction: `v_router2` only routes to a winner,
+  so a losing K1a can't regress the leaderboard. Kill criteria pre-agreed
+  (<20% win over routed `reduce` on #2, correctness bug unfixed in 30min,
+  or 4h total) — honour them, don't extend post-hoc. **UNCLAIMED as of this
+  entry** — three-agent lit pass (`docs/research-agent-findings.md`)
+  independently confirms my K1 falsification transfers to A100 generally
+  (AutoMegaKernel 0.55-0.79x, Hopper-gated), so K1a's narrower small-shape
+  bet is the only live version of this idea; whoever picks it up, read
+  `docs/k1-spec.md` build order (K1a first, K1b/K1c only if K1a wins).
+
+- **K1 (original whole-model design) — CLOSED: real working kernel built,
+  correctness proven, falsified on speed. Do not resume without a
+  fundamentally different design.**
   (journal iter 35, `candidates/v_triton_megakernel_s2.py`, jobs
   `778174,778187,778204,778220,778250` — 5 real GPU attempts).
   Attempted a single-CTA (`grid=(1,)`) kernel fusing the entire 4-layer
@@ -181,12 +218,27 @@ avoid its measured asymmetric-kernel correctness drift.
   *accumulation*, not just fp16 compute with fp32 accumulation — a stronger
   precision cut than anything shipped so far (T7/T6 both specifically keep
   reductions in fp32). Also a small, unclear-maintenance package (79 stars).
-  **Superseded by T10** (`candidates/v_triton_fused_ffn.py`, written and
-  CPU-fallback-tested, GPU-pending): a self-built Triton GEMM+bias+erf-GELU
-  epilogue kernel achieves K2's actual goal (fuse Linear+GELU) while keeping
-  exact erf and fp32 accumulation throughout, no external dependency, no
-  precision question to resolve. Do the K2-via-external-library path only if
-  T10 underperforms and a second opinion is wanted — not the first move.
+  **Superseded by T10** (`candidates/v_triton_fused_ffn.py`) — real GPU
+  result now in and T10's own thread is CLOSED for the 3 shapes it would
+  have competed on (see T10 above: correct, but a hand-rolled GEMM can't
+  beat cuBLASLt there either, in any precision).
+  **K2 (cuBLASLt library route) — CLOSED, do not attempt.** Independent
+  3-agent lit pass (`docs/research-agent-findings.md`) separately confirms
+  cuBLASLt's `GELU_BIAS` is almost certainly tanh not erf (CUTLASS names
+  them as distinct epilogues `GELU`/`GELU_taylor`; cuBLASLt exposes only
+  the unqualified one; corroborated by an unchallenged report on cutlass
+  discussion #700) — would risk the correctness gate for no proven upside.
+  **K2' — NEW, replaces K2, UNCLAIMED.** Route the same Linear+GELU fusion
+  through Triton/Inductor instead of cuBLASLt — erf-safe by construction
+  since Triton computes `erf` natively. `epilogue_fusion=True` is already
+  Inductor's default; the open question is just whether our GEMMs are
+  actually landing on the Triton backend or falling back to ATEN for the
+  `compile`/`reduce` routes. Action: check `max_autotune_gemm_backends`,
+  or profile (M2-style) to confirm which backend already won. Low risk,
+  low cost — but note T10/K1a's own results suggest a hand-fused kernel's
+  ceiling here is small once the underlying GEMM is the fixed cost (M2:
+  GELU is 1.92% of shape 8's time), so treat this as a "confirm we're not
+  leaving something on the table" check, not an expected big win.
 - **K3 — split-K attention for #9 — BOUNDED, DO NOT BUILD.** Attention is 14%
   of #9; max whole-layer gain ~1.09x, under the noise floor. Logged as
   considered.
