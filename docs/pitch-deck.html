@@ -3,6 +3,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;650&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
 <style>
+  /* Deliberately light-mode only, for consistent video recording. */
   :root {
     color-scheme: light;
     --surface-1:      #fcfcfb;
@@ -16,22 +17,6 @@
     --accent-orange:  #eb6834;
     --accent-wash:    rgba(42, 120, 214, 0.10);
     --orange-wash:    rgba(235, 104, 52, 0.10);
-  }
-  @media (prefers-color-scheme: dark) {
-    :root:not([data-theme="light"]) {
-      color-scheme: dark;
-      --surface-1: #14100b; --surface-2: #1e1811; --surface-3: #291f16;
-      --text-primary: #ffffff; --text-secondary: #d8cdbd; --text-muted: #9b8f7d;
-      --grid: #362b1e; --accent: #4a94ec; --accent-orange: #e06a35;
-      --accent-wash: rgba(74, 148, 236, 0.16); --orange-wash: rgba(224, 106, 53, 0.14);
-    }
-  }
-  :root[data-theme="dark"] {
-    color-scheme: dark;
-    --surface-1: #14100b; --surface-2: #1e1811; --surface-3: #291f16;
-    --text-primary: #ffffff; --text-secondary: #d8cdbd; --text-muted: #9b8f7d;
-    --grid: #362b1e; --accent: #4a94ec; --accent-orange: #e06a35;
-    --accent-wash: rgba(74, 148, 236, 0.16); --orange-wash: rgba(224, 106, 53, 0.14);
   }
   * { box-sizing: border-box; }
   html, body { margin: 0; height: 100%; overflow: hidden; background: var(--surface-1); }
@@ -54,40 +39,60 @@
   h2.slide-h2 { font-size: clamp(14px, 1.6vw, 18px); font-weight: 400; color: var(--text-secondary); margin: 0 0 20px; line-height: 1.5; max-width: 68ch; }
   p.slide-p { font-size: clamp(13px, 1.35vw, 16px); color: var(--text-secondary); line-height: 1.6; max-width: 62ch; }
 
-  .chart-box { width: min(1150px, 84vw); height: min(50vh, 480px); margin-top: 1vh; }
+  .chart-box { width: min(1150px, 84vw); height: min(48vh, 460px); margin-top: 1vh; }
 
   .gate-pill { display: inline-flex; align-items: center; gap: 8px; background: var(--accent-wash); color: var(--accent); border-radius: 999px; padding: 7px 16px; font-family: "IBM Plex Mono", monospace; font-size: clamp(11px,1.15vw,13px); font-weight: 600; margin-top: 12px; }
+
+  /* Title lockup (slide 1) */
+  .title-lockup { display: flex; align-items: center; gap: 10px; margin-bottom: 22px; }
+  .tiktok-wordmark { font-family: "IBM Plex Mono", monospace; font-weight: 600; font-size: 15px; color: var(--text-primary); letter-spacing: 0.01em; }
+  .tiktok-wordmark span { color: var(--text-muted); font-weight: 400; }
 
   /* Team roster */
   .team-row { display: flex; gap: 3%; margin-top: 3vh; }
   .team-card { flex: 1; background: var(--surface-2); border-radius: 12px; padding: 4% 5%; }
-  .team-name { font-size: clamp(15px,1.6vw,19px); font-weight: 650; color: var(--text-primary); }
-  .team-role { display: inline-block; font-family: "IBM Plex Mono", monospace; font-size: clamp(10px,1.05vw,12px); color: var(--accent); text-transform: uppercase; letter-spacing: 0.05em; margin: 8px 0 10px; }
-  .team-body { font-size: clamp(11px,1.15vw,13.5px); color: var(--text-secondary); line-height: 1.55; }
+  .team-top { display: flex; align-items: center; gap: 12px; }
+  .team-avatar { width: 40px; height: 40px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-family: "IBM Plex Mono", monospace; font-weight: 600; font-size: 14px; color: #fff; flex: 0 0 auto; }
+  .team-name { font-size: clamp(14px,1.5vw,17px); font-weight: 650; color: var(--text-primary); }
+  .team-role { display: block; font-family: "IBM Plex Mono", monospace; font-size: clamp(9.5px,1vw,11px); color: var(--accent); text-transform: uppercase; letter-spacing: 0.05em; margin-top: 2px; }
+  .team-body { font-size: clamp(11px,1.15vw,13px); color: var(--text-secondary); line-height: 1.55; margin-top: 12px; }
 
-  /* Hardware spec tiles */
-  .spec-row { display: flex; gap: 3%; margin-top: 3vh; }
+  /* Hardware slide */
+  .hw-row { display: flex; align-items: center; gap: 5%; margin-top: 2.5vh; }
+  .hw-left { flex: 0 0 54%; }
+  .hw-right { flex: 1; display: flex; align-items: center; justify-content: center; }
+  .spec-row { display: flex; gap: 3%; margin-top: 2.5vh; }
   .spec-tile { flex: 1; background: var(--surface-2); border-radius: 12px; padding: 3.5% 4%; }
-  .spec-label { font-size: clamp(10px,1.05vw,12.5px); color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.06em; }
-  .spec-value { font-family: "IBM Plex Mono", monospace; font-size: clamp(18px,2.4vw,27px); font-weight: 600; color: var(--text-primary); margin-top: 4%; }
+  .spec-label { font-size: clamp(9.5px,1vw,12px); color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.06em; }
+  .spec-value { font-family: "IBM Plex Mono", monospace; font-size: clamp(16px,2.1vw,23px); font-weight: 600; color: var(--text-primary); margin-top: 4%; }
+  .gpu-illustration { width: 100%; max-width: 340px; height: auto; }
+  .gpu-caption { text-align: center; font-family: "IBM Plex Mono", monospace; font-size: 11px; color: var(--text-muted); margin-top: 8px; letter-spacing: 0.03em; }
 
-  /* Architecture diagram */
-  .arch-diagram { margin-top: 3vh; display: flex; flex-direction: column; gap: 14px; max-width: 920px; }
-  .arch-layer-label { font-family: "IBM Plex Mono", monospace; font-size: clamp(10px,1.05vw,12.5px); color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 8px; }
-  .arch-row { display: flex; align-items: stretch; gap: 10px; }
-  .arch-box { flex: 1; display: flex; align-items: center; justify-content: center; text-align: center; background: var(--surface-2); border-radius: 10px; padding: 14px 12px; font-size: clamp(11px,1.15vw,13.5px); color: var(--text-secondary); }
-  .arch-box.pick { background: var(--accent-wash); color: var(--accent); font-weight: 600; }
-  .arch-arrow { display: flex; align-items: center; color: var(--text-muted); font-size: 18px; flex: 0 0 auto; }
-  .arch-channel { display: flex; justify-content: space-between; align-items: center; background: var(--surface-3); border-radius: 8px; padding: 8px 20px; }
-  .arch-channel-item { font-family: "IBM Plex Mono", monospace; font-size: clamp(10.5px,1.1vw,13px); color: var(--text-secondary); }
+  /* Architecture stepper diagram */
+  .arch-diagram { margin-top: 2.5vh; max-width: 960px; }
+  .arch-layer-label { font-family: "IBM Plex Mono", monospace; font-size: clamp(10px,1.05vw,12px); color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 14px; }
+  .stepper { position: relative; display: flex; justify-content: space-between; padding: 0 2%; }
+  .stepper::before { content: ""; position: absolute; top: 24px; left: 12%; right: 12%; height: 2px; background: var(--grid); z-index: 0; }
+  .step { position: relative; z-index: 1; display: flex; flex-direction: column; align-items: center; gap: 9px; width: 30%; }
+  .step-icon { width: 48px; height: 48px; border-radius: 50%; background: var(--surface-1); border: 2px solid var(--accent); display: flex; align-items: center; justify-content: center; color: var(--accent); }
+  .step-icon svg { width: 22px; height: 22px; }
+  .step-icon.orange { border-color: var(--accent-orange); color: var(--accent-orange); }
+  .step-label { font-size: clamp(11px,1.15vw,13px); font-weight: 600; color: var(--text-primary); text-align: center; }
+  .step-sub { font-size: clamp(9.5px,1vw,11px); color: var(--text-muted); text-align: center; max-width: 15ch; }
+  .arch-channel { display: flex; justify-content: space-between; align-items: center; background: var(--surface-2); border-radius: 8px; padding: 9px 20px; margin: 16px 0; }
+  .arch-channel-item { font-family: "IBM Plex Mono", monospace; font-size: clamp(10px,1.05vw,12.5px); color: var(--text-secondary); }
   .arch-channel-item b { color: var(--accent-orange); font-weight: 600; }
-  .arch-caption { font-size: clamp(11.5px,1.2vw,13.5px); color: var(--text-muted); margin-top: 2vh; max-width: 72ch; line-height: 1.55; }
+  .arch-loop { display: flex; align-items: center; justify-content: flex-end; gap: 6px; margin-top: 10px; font-family: "IBM Plex Mono", monospace; font-size: clamp(10px,1.05vw,12px); color: var(--text-muted); }
+  .arch-loop .glyph { font-size: 15px; color: var(--accent-orange); }
 
   /* Wrap-up */
-  .stat-row { display: flex; gap: 4%; margin-top: 3vh; max-width: 760px; }
-  .stat-tile { flex: 1; background: var(--surface-2); border-radius: 12px; padding: 4% 5%; }
-  .stat-label { font-size: clamp(10px,1.05vw,12.5px); color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.06em; }
-  .stat-value { font-family: "IBM Plex Mono", monospace; font-size: clamp(22px,3vw,34px); font-weight: 600; color: var(--text-primary); margin-top: 4%; }
+  .wrap-row { display: flex; gap: 4%; margin-top: 2.5vh; }
+  .wrap-col { flex: 1; }
+  .wrap-col-label { font-family: "IBM Plex Mono", monospace; font-size: clamp(10px,1.05vw,12px); color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 12px; }
+  .wrap-item { background: var(--surface-2); border-radius: 10px; padding: 12px 16px; margin-bottom: 10px; }
+  .wrap-item-title { font-size: clamp(11.5px,1.2vw,13.5px); font-weight: 600; color: var(--text-primary); margin-bottom: 4px; }
+  .wrap-item-body { font-size: clamp(10.5px,1.1vw,12.5px); color: var(--text-secondary); line-height: 1.5; }
+  .wrap-close { font-size: clamp(11px,1.15vw,13px); color: var(--text-muted); margin-top: 2.5vh; font-family: "IBM Plex Mono", monospace; }
 
   /* Nav & chrome */
   .nav-bar {
@@ -119,23 +124,36 @@
 <div id="deck">
   <!-- 1: TEAM -->
   <div class="slide active" data-notes="notes-1">
-    <div class="kicker">TikTok TechJam 2026 &middot; Track 3</div>
+    <div class="title-lockup">
+      <svg viewBox="0 0 44 44" width="30" height="30" aria-hidden="true">
+        <g transform="translate(-1.4,1.1)"><ellipse cx="15" cy="30" rx="8" ry="7" fill="#25F4EE"/><rect x="21" y="6" width="5.5" height="25" rx="2.75" fill="#25F4EE"/><path d="M26.5 6 C 34 6 38 11 38 17 L 38 20 C 32 20 26.5 16.5 26.5 16.5 Z" fill="#25F4EE"/></g>
+        <g transform="translate(1.4,-1.1)"><ellipse cx="15" cy="30" rx="8" ry="7" fill="#FE2C55"/><rect x="21" y="6" width="5.5" height="25" rx="2.75" fill="#FE2C55"/><path d="M26.5 6 C 34 6 38 11 38 17 L 38 20 C 32 20 26.5 16.5 26.5 16.5 Z" fill="#FE2C55"/></g>
+        <g><ellipse cx="15" cy="30" rx="8" ry="7" fill="#0b0b0b"/><rect x="21" y="6" width="5.5" height="25" rx="2.75" fill="#0b0b0b"/><path d="M26.5 6 C 34 6 38 11 38 17 L 38 20 C 32 20 26.5 16.5 26.5 16.5 Z" fill="#0b0b0b"/></g>
+      </svg>
+      <div class="tiktok-wordmark">TikTok <span>TechJam 2026 &middot; Track 3</span></div>
+    </div>
     <h1 class="slide-h">Transformer GPU kernel optimization</h1>
     <h2 class="slide-h2">A GPU implementation of a fixed pre-LayerNorm Transformer block, optimized against a correctness-gated benchmark.</h2>
     <div class="team-row">
       <div class="team-card">
-        <div class="team-name">Tong Jing Yen</div>
-        <div class="team-role">Implementation</div>
+        <div class="team-top">
+          <div class="team-avatar" style="background:#2a78d6">JY</div>
+          <div><div class="team-name">Tong Jing Yen</div><span class="team-role">Implementation</span></div>
+        </div>
         <div class="team-body">Autoresearch agent loop, candidate kernels, benchmark harness, cluster and RunPod integration.</div>
       </div>
       <div class="team-card">
-        <div class="team-name">Khoo Shi Xian</div>
-        <div class="team-role">Research</div>
+        <div class="team-top">
+          <div class="team-avatar" style="background:#eb6834">SX</div>
+          <div><div class="team-name">Khoo Shi Xian</div><span class="team-role">Research</span></div>
+        </div>
         <div class="team-body">Problem-statement analysis, research queue, plan / review / reconcile loop, tech report.</div>
       </div>
       <div class="team-card">
-        <div class="team-name">Brandon Kang</div>
-        <div class="team-role">Team member</div>
+        <div class="team-top">
+          <div class="team-avatar" style="background:#85837c">BK</div>
+          <div><div class="team-name">Brandon Kang</div><span class="team-role">Team member</span></div>
+        </div>
         <div class="team-body">&mdash;</div>
       </div>
     </div>
@@ -153,12 +171,43 @@
   <div class="slide" data-notes="notes-3">
     <div class="kicker">Hardware</div>
     <h1 class="slide-h">RunPod, A100-SXM4-80GB</h1>
-    <p class="slide-p">Our university cluster's shared A100 queue became the actual bottleneck mid-project &mdash; multi-hour waits between runs. We moved to on-demand RunPod A100 instances, provisioned per benchmark and torn down immediately after.</p>
-    <div class="spec-row">
-      <div class="spec-tile"><div class="spec-label">Memory</div><div class="spec-value">80 GB</div></div>
-      <div class="spec-tile"><div class="spec-label">Form factor</div><div class="spec-value">SXM4</div></div>
-      <div class="spec-tile"><div class="spec-label">Provisioning</div><div class="spec-value">On-demand</div></div>
-      <div class="spec-tile"><div class="spec-label">Lifecycle</div><div class="spec-value">Per-run</div></div>
+    <div class="hw-row">
+      <div class="hw-left">
+        <p class="slide-p">Our university cluster's shared A100 queue became the actual bottleneck mid-project &mdash; multi-hour waits between runs. We moved to on-demand RunPod A100 instances, provisioned per benchmark and torn down immediately after.</p>
+        <div class="spec-row">
+          <div class="spec-tile"><div class="spec-label">Memory</div><div class="spec-value">80 GB</div></div>
+          <div class="spec-tile"><div class="spec-label">Form factor</div><div class="spec-value">SXM4</div></div>
+          <div class="spec-tile"><div class="spec-label">Provisioning</div><div class="spec-value">On-demand</div></div>
+        </div>
+      </div>
+      <div class="hw-right">
+        <div>
+          <svg class="gpu-illustration" viewBox="0 0 320 190" aria-hidden="true">
+            <rect x="18" y="16" width="284" height="120" rx="10" fill="#f3f2ef" stroke="#e4e2dc" stroke-width="1.5"/>
+            <g stroke="#e4e2dc" stroke-width="2" stroke-linecap="round">
+              <line x1="34" y1="30" x2="34" y2="86"/><line x1="50" y1="30" x2="50" y2="86"/><line x1="66" y1="30" x2="66" y2="86"/>
+              <line x1="82" y1="30" x2="82" y2="86"/><line x1="98" y1="30" x2="98" y2="86"/><line x1="114" y1="30" x2="114" y2="86"/>
+              <line x1="130" y1="30" x2="130" y2="86"/><line x1="146" y1="30" x2="146" y2="86"/><line x1="162" y1="30" x2="162" y2="86"/>
+              <line x1="178" y1="30" x2="178" y2="86"/><line x1="194" y1="30" x2="194" y2="86"/><line x1="210" y1="30" x2="210" y2="86"/>
+              <line x1="226" y1="30" x2="226" y2="86"/><line x1="242" y1="30" x2="242" y2="86"/><line x1="258" y1="30" x2="258" y2="86"/><line x1="274" y1="30" x2="274" y2="86"/>
+            </g>
+            <rect x="94" y="98" width="90" height="30" rx="4" fill="#2a78d61a" stroke="#2a78d6" stroke-width="1.5"/>
+            <text x="139" y="118" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="12" font-weight="600" fill="#2a78d6">A100</text>
+            <g fill="#eb683499">
+              <rect x="34" y="140" width="10" height="18" rx="1.5"/><rect x="48" y="140" width="10" height="18" rx="1.5"/>
+              <rect x="62" y="140" width="10" height="18" rx="1.5"/><rect x="76" y="140" width="10" height="18" rx="1.5"/>
+              <rect x="90" y="140" width="10" height="18" rx="1.5"/><rect x="104" y="140" width="10" height="18" rx="1.5"/>
+              <rect x="118" y="140" width="10" height="18" rx="1.5"/><rect x="132" y="140" width="10" height="18" rx="1.5"/>
+              <rect x="146" y="140" width="10" height="18" rx="1.5"/><rect x="160" y="140" width="10" height="18" rx="1.5"/>
+              <rect x="174" y="140" width="10" height="18" rx="1.5"/><rect x="188" y="140" width="10" height="18" rx="1.5"/>
+              <rect x="202" y="140" width="10" height="18" rx="1.5"/><rect x="216" y="140" width="10" height="18" rx="1.5"/>
+              <rect x="230" y="140" width="10" height="18" rx="1.5"/><rect x="244" y="140" width="10" height="18" rx="1.5"/>
+              <rect x="258" y="140" width="10" height="18" rx="1.5"/><rect x="272" y="140" width="10" height="18" rx="1.5"/>
+            </g>
+          </svg>
+          <div class="gpu-caption">NVIDIA A100 &middot; SXM4 &middot; 80GB HBM2e</div>
+        </div>
+      </div>
     </div>
   </div>
 
@@ -167,51 +216,88 @@
     <div class="kicker">Method</div>
     <h1 class="slide-h">Two agent layers, coordinated through git</h1>
     <div class="arch-diagram">
-      <div>
-        <div class="arch-layer-label">Research layer</div>
-        <div class="arch-row">
-          <div class="arch-box">plan a direction</div>
-          <div class="arch-arrow">&rarr;</div>
-          <div class="arch-box">adversarial review</div>
-          <div class="arch-arrow">&rarr;</div>
-          <div class="arch-box">reconcile</div>
+      <div class="arch-layer-label">Research layer</div>
+      <div class="stepper">
+        <div class="step">
+          <div class="step-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="2.6"/></svg></div>
+          <div class="step-label">Plan a direction</div>
+          <div class="step-sub">rank the queue</div>
+        </div>
+        <div class="step">
+          <div class="step-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="10" cy="10" r="6"/><line x1="14.2" y1="14.2" x2="20" y2="20"/></svg></div>
+          <div class="step-label">Adversarial review</div>
+          <div class="step-sub">second model, checks it</div>
+        </div>
+        <div class="step">
+          <div class="step-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="4,12 9,17 20,6"/></svg></div>
+          <div class="step-label">Reconcile</div>
+          <div class="step-sub">agree what's worth testing</div>
         </div>
       </div>
+
       <div class="arch-channel">
         <div class="arch-channel-item"><b>TODO.md</b> &nbsp;&rarr;&nbsp; hypotheses, ranked</div>
         <div class="arch-channel-item">&nbsp;&larr;&nbsp; results, logged &nbsp;<b>journal.jsonl</b></div>
       </div>
-      <div>
-        <div class="arch-layer-label">Implementation layer</div>
-        <div class="arch-row">
-          <div class="arch-box">write one candidate</div>
-          <div class="arch-arrow">&rarr;</div>
-          <div class="arch-box">benchmark + correctness gate</div>
-          <div class="arch-arrow">&rarr;</div>
-          <div class="arch-box pick">keep or prune</div>
+
+      <div class="arch-layer-label">Implementation layer</div>
+      <div class="stepper">
+        <div class="step">
+          <div class="step-icon orange"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="8,6 2,12 8,18"/><polyline points="16,6 22,12 16,18"/></svg></div>
+          <div class="step-label">Write one candidate</div>
+          <div class="step-sub">one hypothesis at a time</div>
+        </div>
+        <div class="step">
+          <div class="step-icon orange"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 16 A8 8 0 0 1 20 16"/><line x1="12" y1="16" x2="17" y2="9"/></svg></div>
+          <div class="step-label">Benchmark + gate</div>
+          <div class="step-sub">correctness before speed</div>
+        </div>
+        <div class="step">
+          <div class="step-icon orange"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><line x1="12" y1="4" x2="12" y2="12"/><line x1="12" y1="12" x2="6" y2="20"/><line x1="12" y1="12" x2="18" y2="20"/></svg></div>
+          <div class="step-label">Keep or prune</div>
+          <div class="step-sub">logged either way</div>
         </div>
       </div>
+      <div class="arch-loop"><span class="glyph">&#10227;</span> next iteration reads the same log</div>
     </div>
-    <p class="arch-caption">The two layers share no state except these two files. Every claim entering the research layer already passed the correctness gate &mdash; speed is never discussed before that.</p>
   </div>
 
   <!-- 5: IMPROVEMENTS -->
   <div class="slide" data-notes="notes-5">
     <div class="kicker">Results</div>
-    <h1 class="slide-h">6.54&times; geomean speedup, five iterations, one GPU</h1>
+    <h1 class="slide-h">6.54&times; geomean, five iterations, one GPU</h1>
     <div class="chart-box" id="chart-improvements"></div>
   </div>
 
   <!-- 6: WRAP-UP -->
   <div class="slide" data-notes="notes-6">
     <div class="kicker">Summary</div>
-    <h1 class="slide-h">13 of 13 shapes correct, at 6.54&times;</h1>
-    <p class="slide-p">Every number in this deck came from a GPU run logged in <code>journal.jsonl</code> before it was reported. Two optimizations that did not work &mdash; and the actual mechanism behind each failure &mdash; are documented in the tech report rather than left out.</p>
-    <div class="stat-row">
-      <div class="stat-tile"><div class="stat-label">Median speedup</div><div class="stat-value">5.40&times;</div></div>
-      <div class="stat-tile"><div class="stat-label">Geomean speedup</div><div class="stat-value">6.54&times;</div></div>
-      <div class="stat-tile"><div class="stat-label">Correctness</div><div class="stat-value">13/13</div></div>
+    <h1 class="slide-h">What we ruled out, and what's next</h1>
+    <div class="wrap-row">
+      <div class="wrap-col">
+        <div class="wrap-col-label">Ruled out, mechanism understood</div>
+        <div class="wrap-item">
+          <div class="wrap-item-title">Pretransposed Linear weights</div>
+          <div class="wrap-item-body">Won standalone (+80%). Regressed 10&ndash;44% stacked on CUDA-graph routes &mdash; an extra kernel launch per call outweighed the layout win.</div>
+        </div>
+        <div class="wrap-item">
+          <div class="wrap-item-title">Native fp16 weights</div>
+          <div class="wrap-item-body">Failed correctness outright. Autocast keeps the residual stream in fp32 the whole time; casting it directly doesn't.</div>
+        </div>
+      </div>
+      <div class="wrap-col">
+        <div class="wrap-col-label">What's next</div>
+        <div class="wrap-item">
+          <div class="wrap-item-title">Apply pretransposition selectively</div>
+          <div class="wrap-item-body">It never got a fair test on the non-graphed routes, where the launch-count penalty doesn't apply.</div>
+        </div>
+        <div class="wrap-item">
+          <div class="wrap-item-title">Cross-check on our original cluster</div>
+          <div class="wrap-item-body">Now optional for our own confidence, not a submission blocker &mdash; RunPod is our canonical device.</div>
+        </div>
+      </div>
     </div>
+    <div class="wrap-close">github.com/jing-yen/techjam-track3-autoresearch &mdash; full reproduction steps, journal, and every negative result in the repo.</div>
   </div>
 </div>
 
@@ -233,78 +319,79 @@ const NOTES = {
   "notes-1": "Our team split the work into two layers. Jing Yen built the implementation side: the agent loop, the candidate kernels, and the benchmarking infrastructure. Shi Xian led research: problem analysis, the review process, and the tech report.",
   "notes-2": "Track 3 asks for a faster GPU implementation of a fixed Transformer block. The rules are simple: match the organizer's reference within a per-element tolerance, across fourteen published input shapes, or the speedup doesn't count.",
   "notes-3": "We started on our university's shared A100 cluster, but the queue became the actual bottleneck — multi-hour waits between runs. We moved to RunPod, provisioning A100-SXM4-80GB instances on demand and tearing them down after each benchmark.",
-  "notes-4": "Rather than hand-tune one kernel, we built two agent layers that only talk to each other through git. A research layer proposes a direction, an adversarial review checks it, and the two reconcile on what's worth testing next. An implementation layer writes one candidate, runs it through the benchmark and correctness gate, and keeps or prunes it — the research layer reads back what happened from the same log.",
-  "notes-5": "Five real steps got us from a 2.87x speedup to 6.54x. Per-shape dispatch across validated implementations. Fp16 precision plus a custom fused kernel on the heaviest shapes. An autotuned kernel config that also fixed a shape that previously never finished. A systematic recheck that found six shapes were still on a stale routing decision. And a final re-run specifically to capture full correctness evidence for every shape, not just pass or fail.",
-  "notes-6": "Thirteen of thirteen shapes pass the correctness gate at 6.54 times the reference speed. Every number here came from a logged GPU run, and two optimizations that didn't work are documented with the actual reason they failed, not just that they did.",
+  "notes-4": "Rather than hand-tune one kernel, we built two agent layers that only talk to each other through git. A research layer proposes a direction, an adversarial review checks it, and the two reconcile on what's worth testing next. An implementation layer writes one candidate, runs it through the benchmark and correctness gate, and keeps or prunes it — the next iteration reads back what happened from the same log.",
+  "notes-5": "Five real steps got us from 2.87x to 6.54x geomean. Each box here is the actual spread across all thirteen shapes, not just the headline number — some shapes gain much more than others, and that spread is real too. Per-shape dispatch, fp16 plus a fused kernel on the heaviest shapes, an autotuned kernel config that also fixed a shape that previously never finished, a systematic recheck that found six shapes on a stale route, and a final re-run to attach full correctness evidence to the result.",
+  "notes-6": "Two ideas looked promising and didn't survive contact with the real system — pretransposed weights regressed once stacked on CUDA graphs, native fp16 weights failed correctness outright. Both are understood, not just abandoned. What's left: give pretransposition a fair test where it wasn't tried, and an optional cross-check on our original cluster.",
 };
 
-// ---- theme-aware ECharts palette ----
-function isDark() {
-  const explicit = document.documentElement.getAttribute("data-theme");
-  if (explicit === "dark") return true;
-  if (explicit === "light") return false;
-  return window.matchMedia("(prefers-color-scheme: dark)").matches;
-}
-function palette() {
-  const dark = isDark();
-  return {
-    text: dark ? "#d8cdbd" : "#52514e",
-    textStrong: dark ? "#ffffff" : "#0b0b0b",
-    muted: dark ? "#9b8f7d" : "#85837c",
-    grid: dark ? "#362b1e" : "#e4e2dc",
-    accent: dark ? "#4a94ec" : "#2a78d6",
-    orange: dark ? "#e06a35" : "#eb6834",
-  };
-}
+// ---- ECharts palette (light only) ----
+const P = {
+  text: "#52514e", textStrong: "#0b0b0b", muted: "#85837c", grid: "#e4e2dc",
+  accent: "#2a78d6", orange: "#eb6834",
+};
+function baseTextStyle() { return { fontFamily: "IBM Plex Sans", color: P.text }; }
 
 let charts = [];
-function baseTextStyle(p) {
-  return { fontFamily: "IBM Plex Sans", color: p.text };
-}
 
-const IMPROVEMENT_DETAIL = [
-  "Per-shape dispatch across four validated implementations — no new kernel code.",
-  "Fp16 autocast on the three most compute-heavy shapes, plus a custom fused Triton kernel.",
-  "Autotuned kernel launch config; shape 14 (100k-token sequence) moved from never finishing to ~8s per pass.",
-  "A systematic recheck found 6 of 13 shapes were still on a stale route — all confirmed with a real 6-way comparison.",
-  "Re-run specifically to capture full per-shape correctness margins — same result, now fully documented.",
+// Real per-shape speedup distributions, journal iters: v_router (RunPod
+// baseline), router2_amp_cg_confirm (v_router2 plain), iter 55, iter 58,
+// iter 61. [min, Q1, median, Q3, max] computed from the 13 per-shape values.
+const BOX_DATA = [
+  [1.289, 2.056, 2.362, 4.390, 6.626],
+  [1.831, 3.474, 4.571, 7.958, 10.902],
+  [1.810, 3.362, 4.892, 7.702, 11.520],
+  [1.814, 4.594, 5.361, 11.073, 14.157],
+  [1.815, 4.860, 5.405, 11.240, 14.109],
 ];
+const GEOMEAN = [2.870, 4.849, 4.882, 6.457, 6.542];
+const CATS = ["v_router\nper-shape dispatch", "v_router2\nAMP + fused kernel", "+ autotune\n+ shape 14 fix", "+ systematic\nre-route", "+ full correctness\nevidence"];
 
 function buildImprovements() {
-  const p = palette();
   const el = document.getElementById("chart-improvements");
   const chart = echarts.init(el, null, { renderer: "svg" });
-  const data = [2.87, 4.85, 4.88, 6.46, 6.54];
-  const labels = ["v_router\nper-shape dispatch", "v_router2\nAMP + fused kernel", "+ autotune\n+ shape 14 fix", "+ systematic\nre-route", "+ full correctness\nevidence"];
   chart.setOption({
-    textStyle: baseTextStyle(p),
+    textStyle: baseTextStyle(),
     grid: { left: 54, right: 30, top: 40, bottom: 66 },
-    tooltip: {
-      trigger: "axis",
-      backgroundColor: p.textStrong === "#ffffff" ? "#1e1811" : "#ffffff",
-      borderColor: p.grid,
-      textStyle: { color: p.text, fontFamily: "IBM Plex Sans", fontSize: 12.5 },
-      formatter: (params) => {
-        const i = params[0].dataIndex;
-        return `<b style="color:${p.textStrong}">${data[i].toFixed(2)}x geomean</b><br/>${IMPROVEMENT_DETAIL[i]}`;
-      },
-      extraCssText: "max-width:320px; white-space:normal; line-height:1.5; padding:10px 12px;",
+    legend: {
+      data: ["per-shape range (min–max, IQR box)", "geomean (reported)"],
+      top: 0, textStyle: { color: P.text, fontFamily: "IBM Plex Mono", fontSize: 10.5 }, itemWidth: 12, itemHeight: 10,
     },
-    xAxis: { type: "category", data: labels, axisLine: { lineStyle: { color: p.grid } }, axisLabel: { color: p.muted, fontFamily: "IBM Plex Mono", fontSize: 11, lineHeight: 15 }, axisTick: { show: false } },
-    yAxis: { type: "value", min: 2, max: 7.3, axisLabel: { color: p.muted, fontFamily: "IBM Plex Mono", formatter: "{value}x" }, splitLine: { lineStyle: { color: p.grid } } },
-    series: [{
-      type: "line", data: data, smooth: true, symbolSize: 10,
-      lineStyle: { width: 3, color: p.accent },
-      itemStyle: { color: (params) => params.dataIndex === data.length - 1 ? p.orange : p.accent, borderWidth: 2, borderColor: p.textStrong === "#ffffff" ? "#14100b" : "#fcfcfb" },
-      areaStyle: {
-        color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
-          { offset: 0, color: p.accent + "33" },
-          { offset: 1, color: p.accent + "00" },
-        ]),
+    tooltip: {
+      trigger: "item",
+      backgroundColor: "#ffffff", borderColor: P.grid,
+      textStyle: { color: P.text, fontFamily: "IBM Plex Sans", fontSize: 12 },
+      extraCssText: "padding:10px 12px; line-height:1.5;",
+    },
+    xAxis: { type: "category", data: CATS, axisLine: { lineStyle: { color: P.grid } }, axisLabel: { color: P.muted, fontFamily: "IBM Plex Mono", fontSize: 10.5, lineHeight: 14 }, axisTick: { show: false }, boundaryGap: true },
+    yAxis: { type: "value", min: 0, max: 15.5, axisLabel: { color: P.muted, fontFamily: "IBM Plex Mono", formatter: "{value}x" }, splitLine: { lineStyle: { color: P.grid } } },
+    series: [
+      {
+        name: "per-shape range (min–max, IQR box)",
+        type: "boxplot",
+        data: BOX_DATA,
+        itemStyle: { color: P.accent + "1a", borderColor: P.accent, borderWidth: 1.6 },
+        boxWidth: [26, 40],
+        tooltip: {
+          formatter: (p) => {
+            const v = p.data;
+            return `<b style="color:${P.textStrong}">${CATS[p.dataIndex].replace("\n"," ")}</b><br/>`
+              + `max ${v[5].toFixed(2)}x &nbsp; Q3 ${v[4].toFixed(2)}x<br/>`
+              + `median ${v[3].toFixed(2)}x<br/>`
+              + `Q1 ${v[2].toFixed(2)}x &nbsp; min ${v[1].toFixed(2)}x`;
+          },
+        },
       },
-      label: { show: true, position: "top", formatter: (d) => d.value.toFixed(2) + "x", color: p.textStrong, fontFamily: "IBM Plex Mono", fontWeight: 600, fontSize: 14 },
-      animationDuration: 900, animationEasing: "cubicOut",
-    }],
+      {
+        name: "geomean (reported)",
+        type: "line", data: GEOMEAN, symbol: "diamond", symbolSize: 11,
+        lineStyle: { width: 2.5, color: P.orange, type: "dashed" },
+        itemStyle: { color: P.orange, borderWidth: 2, borderColor: "#fcfcfb" },
+        label: { show: true, position: "top", formatter: (d) => d.value.toFixed(2) + "x", color: P.textStrong, fontFamily: "IBM Plex Mono", fontWeight: 600, fontSize: 13, offset: [0, -4] },
+        tooltip: { formatter: (p) => `<b style="color:${P.textStrong}">geomean ${p.value.toFixed(2)}x</b><br/>the reported aggregate` },
+        z: 5,
+      },
+    ],
+    animationDuration: 700, animationEasing: "cubicOut",
   });
   return chart;
 }
@@ -357,9 +444,6 @@ function toggleNotes() {
 notesBtn.addEventListener("click", toggleNotes);
 
 window.addEventListener("resize", () => charts.forEach(c => c && c.resize()));
-if (window.matchMedia) {
-  window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", renderAllCharts);
-}
 
 renderAllCharts();
 goTo(0);

@@ -55,24 +55,26 @@ keep/prune), connected through `TODO.md` / `journal.jsonl`.
 > adversarial review checks it, and the two reconcile on what's worth
 > testing next. An implementation layer writes one candidate, runs it
 > through the benchmark and correctness gate, and keeps or prunes it — the
-> research layer reads back what happened from the same log."
+> next iteration reads back what happened from the same log."
 
 ---
 
 ## 5. Incremental improvements — ~1:33-2:33
 
-**ON SCREEN:** Slide 5 — the geomean-speedup line chart (2.87x → 4.85x →
-4.88x → 6.46x → 6.54x), five points, hover tooltip per point for the detail
-line below.
+**ON SCREEN:** Slide 5 — a box plot at five milestones (v_router → v_router2
+→ +autotune/shape14 → +systematic reroute → +full correctness evidence),
+each box showing the real min/Q1/median/Q3/max across all 13 shapes, with
+the reported geomean overlaid as a separate dashed line.
 
 **NARRATION:**
-> "Five real steps got us from a 2.87x speedup to 6.54x. Per-shape dispatch
-> across validated implementations. Fp16 precision plus a custom fused
-> kernel on the heaviest shapes. An autotuned kernel config that also fixed
-> a shape that previously never finished. A systematic recheck that found
-> six shapes were still on a stale routing decision. And a final re-run
-> specifically to capture full correctness evidence for every shape, not
-> just pass or fail."
+> "Five real steps got us from 2.87x to 6.54x geomean. Each box here is the
+> actual spread across all thirteen shapes, not just the headline number —
+> some shapes gain much more than others, and that spread is real too.
+> Per-shape dispatch. Fp16 precision plus a custom fused kernel on the
+> heaviest shapes. An autotuned kernel config that also fixed a shape that
+> previously never finished. A systematic recheck that found six shapes on
+> a stale route. And a final re-run to attach full correctness evidence to
+> the result."
 
 *Per-point detail (matches the chart's hover tooltips):*
 1. Per-shape dispatch across four validated implementations — no new kernel code.
@@ -85,14 +87,17 @@ line below.
 
 ## 6. Wrap-up — ~2:33-2:58
 
-**ON SCREEN:** Slide 6 — final stat tiles (median 5.40x / geomean 6.54x /
-13/13 correct).
+**ON SCREEN:** Slide 6 — two columns: what was ruled out (pretransposed
+Linear weights, native fp16 weights) and what's next (selective
+pretransposition, an optional cross-check on the original cluster), plus
+the repo link.
 
 **NARRATION:**
-> "Thirteen of thirteen shapes pass the correctness gate at 6.54 times the
-> reference speed. Every number here came from a logged GPU run, and two
-> optimizations that didn't work are documented with the actual reason they
-> failed, not just that they did."
+> "Two ideas looked promising and didn't survive contact with the real
+> system — pretransposed weights regressed once stacked on CUDA graphs,
+> native fp16 weights failed correctness outright. Both are understood, not
+> just abandoned. What's left: give pretransposition a fair test where it
+> wasn't tried, and an optional cross-check on our original cluster."
 
 ---
 
