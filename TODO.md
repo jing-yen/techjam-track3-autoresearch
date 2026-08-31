@@ -557,7 +557,12 @@ because three of the four are **not** the same problem:
   requirement, not a performance choice. This is a correct, working first
   cut, not a tuned kernel — see T7b below.
 
-- **S8 — OPEN, HIGHER PRIORITY THAN T7b/T9 BELOW: measure the run-to-run
+- **S8 — CLAIMED (opus-1), dispatched.** Job `778942` runs two more
+  official-protocol sweeps of the CURRENT champion (`v_router2.py`, now
+  with T15 landed — supersedes the T7-era framing below, same measurement
+  need) plus S9's seed check in the same job, on a healthy node
+  (`xgpj0` excluded). Results pending.
+- **S8 (original framing) — HIGHER PRIORITY THAN T7b/T9 BELOW: measure the run-to-run
   error bar before claiming any more gains.** (per `docs/research-batch3.md`,
   S7). A sharp finding: the claimed T7 gain (2.89x→2.99x, +3.9% geomean) is
   likely **smaller than the cluster's own run-to-run noise**. One untouched
@@ -573,7 +578,9 @@ because three of the four are **not** the same problem:
   number), but do not narrate "Triton bought us +3.9%" without this
   error bar to back it up.
 
-- **S9 — OPEN, cheap, same priority tier as S8: seed-robustness check on
+- **S9 — CLAIMED (opus-1), dispatched alongside S8 in job `778942`**
+  (seeds 2001, 3002 on shape #8, current champion). Results pending.
+- **S9 (original framing) — cheap, same priority tier as S8: seed-robustness check on
   shape #8.** (`docs/research-batch3.md`, S7). Three independent error
   sources now stack on shape #8's `amp` route: fp32 SDPA (~1e-6) → Triton
   AddNorm (0.0006-0.0013) → fp16 autocast (0.00176) — **88% of the 0.002
