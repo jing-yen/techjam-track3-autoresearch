@@ -110,7 +110,9 @@ if _HAS_TRITON:
         x = tl.load(x_ptr + rows[:, None] * D + cols[None, :]).to(tl.float32)
 
         causal_mask = rows[:, None] >= rows[None, :]  # [SEQ, SEQ], True where allowed
-        inv_sqrt_head_dim = 1.0 / tl.sqrt(HEAD_DIM.to(tl.float32))
+        # HEAD_DIM is a plain Python int at trace time (tl.constexpr), not a
+        # Triton tensor -- no .to() method. Compute the Python float directly.
+        inv_sqrt_head_dim = 1.0 / (HEAD_DIM ** 0.5)
 
         for layer in range(LAYERS):
             # ---- norm1 ----
