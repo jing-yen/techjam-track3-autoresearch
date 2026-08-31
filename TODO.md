@@ -467,20 +467,28 @@ because three of the four are **not** the same problem:
   call) is real and verified via source, but fixing it doesn't clearly pay
   off given the whole 17% wasn't weight-cast to begin with.
 
-- **T17 — NEW, built, dispatched.** `candidates/v_triton_addnorm_fused.py`:
-  applies T7+T15's proven AddNorm fusion (both boundaries) to the `fused`
-  route (shapes #9/#10/#11/#12), which currently has **none** — checked
-  directly in `v_router2.py`: `_FusedBlock.forward` is plain eager
-  PyTorch, two fully unfused residual-add+LayerNorm pairs, no Triton
-  kernel at all. Unlike `compile`/`reduce` (Inductor auto-fuses this,
-  confirmed via M2) and unlike `best`/`amp` (T7+T15 already there),
-  `fused`'s only optimization has been the fused-QKV projection since
-  T5/T3 — nothing on the norm/residual side since. Reuses T7+T15's exact
-  kernel and cross-layer-chaining wiring unmodified, swapping in
-  `_FusedAttention`'s fused-QKV projection for T15's separate Q/K/V
-  Linears — the only structural difference. CPU-fallback tested (13/13-
-  equivalent dev shapes). GPU test dispatched — standalone first, same
-  workflow as T15/T16.
+- **T17 — CLOSED, real and large negative result, NOT integrated.**
+  `candidates/v_triton_addnorm_fused.py`: applied T7+T15's proven AddNorm
+  fusion (both boundaries) to the `fused` route, which had none. **Tested
+  standalone on GPU (job 778892), 13/13 correct**, but per-shape against
+  the current leaderboard's actual `fused`-routed numbers: **#9 2.233→1.558
+  (-30.2%), #10 2.470→1.732 (-29.9%), #12 2.467→1.715 (-30.5%)** — large,
+  unambiguous regressions, nowhere near the ±2.7% noise floor. Only #11
+  (16 heads) improved (+3.8%). **Do not integrate.** Root cause not fully
+  diagnosed (would need a real profiler trace to pin down, not done here
+  given the verdict is already clear either way) — best guess: the
+  `fused_add_layernorm` wrapper's unconditional `.reshape().contiguous()`
+  calls (copied verbatim from T7/T15, ×2 per call — once for residual,
+  once for delta) add real Python-dispatch + possible-copy overhead per
+  layer that plain PyTorch's `x = x + ffn_out(...)` didn't have, and for
+  shapes #9/#10/#12's specific eager-execution profile (no `torch.compile`
+  to amortize kernel-launch count the way `compile`/`reduce` do) that
+  overhead apparently costs MORE than the fusion saves — the opposite of
+  what happened on the `amp` route (T15), where the SAME kernel was a
+  clear win. **Lesson for future fusion attempts:** T7/T15's win on `amp`
+  doesn't generalize to every eager route by default; each route's actual
+  overhead profile needs checking (ideally profiled, not just assumed)
+  before porting a fusion that worked elsewhere.
 
 ## Open — the measurement that unblocks the rest
 
