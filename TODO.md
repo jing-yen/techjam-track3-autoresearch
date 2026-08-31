@@ -237,6 +237,40 @@ to any job until this clears.** Not filed with cluster admins from this session
 (no ticket system access) — if anyone has an ops contact, worth a heads-up so it
 doesn't silently eat other people's GPU allocation the way it ate three of mine.
 
+## Open — SHAPE 6 IS NOW 83% OF THE RUNTIME AND HAS NEVER BEEN PROFILED
+
+- **U1 — Profile shape #6. Highest-value action available, and it is cheap.**
+  `fusedcg` landing changed the landscape: #6 is **56.54 ms = 83.0% of remaining
+  wall clock**, #8 is 6.7%, everything else under 2%. **Every optimization item
+  currently in this queue targets shapes worth under 7% of the runtime.**
+  #6 is also unexplained by either ceiling: **20.8 TFLOP/s = 6.7% of the fp16
+  peak**, and ~12.2 GB of HBM traffic gives a **6.3 ms bandwidth floor against
+  56.5 ms measured — 9x above.** Neither compute nor bandwidth accounts for it.
+  M2 profiled #1, #8, #13 — never #6. `tools/profile_shapes.py` already exists;
+  point it at #6. One trace decides everything below. Full brief:
+  `docs/research-untried.md`.
+- **U2 — L2 cache blocking over the batch (locality, not memory).** Untried, and
+  distinct from S5 (which chunked to FIT in HBM). #6's activation is **312 MB
+  fp16 vs A100's 40 MB L2**, so every layer re-reads it from HBM. Chunk to
+  **1000 → 31.2 MB, L2-resident**, and run each chunk through all 4 layers while
+  it stays hot. HBM traffic ~12.2 GB → ~0.6 GB. Exact, same mechanism S5 already
+  proved on #14. *Conditional on U1.*
+- **U3 — end-to-end fp16 instead of `autocast`.** M2 measured **17.1% of shape
+  8's time in dtype casting**. Autocast casts at every op boundary; cast once at
+  block entry and back at exit, keeping LayerNorm/softmax fp32 explicitly.
+  Distinct from T16 (which pre-cast *weights*; this is *activations*). Touches
+  #6/#8/#13 = 90% of runtime. *Risk:* #8 is already at 88% of the atol budget —
+  gate on S9.
+- **U4 — compile the fused/fusedcg routes.** `compile` and `fused` have never
+  been combined. `torch.library.triton_op` / `capture_triton` let Inductor fuse
+  *around* a custom Triton kernel. T17 used manual CUDA graphs instead — a
+  different lever, not this one.
+- **U5 — weight pre-transposition** (`nn.Linear` is `x @ W.T`; pre-transpose for
+  an NN rather than NT cuBLAS variant). Cheap A/B, never run, and #6 is 86% GEMM.
+- **U6 — A100 L2 persistence window** (`accessPolicyWindow`). Real Ampere
+  feature, absent from this project, but needs a C++ extension. Listed, not
+  started.
+
 ## Open — kernel frontier (research pass, 2026-08-31)
 
 - **K1a — REINSTATED with a bounded 4h time-box, narrower scope than the
