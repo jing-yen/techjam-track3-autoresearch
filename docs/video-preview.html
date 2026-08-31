@@ -1,0 +1,359 @@
+<title>Video Preview</title>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;650&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<style>
+  :root {
+    color-scheme: light;
+    --surface-1:      #fcfcfb;
+    --surface-2:      #f3f2ef;
+    --text-primary:   #0b0b0b;
+    --text-secondary: #52514e;
+    --text-muted:     #85837c;
+    --grid:           #e4e2dc;
+    --accent:         #2a78d6;
+    --accent-orange:  #eb6834;
+    --accent-wash:    rgba(42, 120, 214, 0.10);
+    --frame-bg:       #eeece7;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      color-scheme: dark;
+      --surface-1:      #17110c;
+      --surface-2:      #221a12;
+      --text-primary:   #ffffff;
+      --text-secondary: #d8cdbd;
+      --text-muted:     #9b8f7d;
+      --grid:           #3a2f22;
+      --accent:         #3987e5;
+      --accent-orange:  #d95926;
+      --accent-wash:    rgba(57, 135, 229, 0.14);
+      --frame-bg:       #0d0a07;
+    }
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --surface-1:      #17110c;
+    --surface-2:      #221a12;
+    --text-primary:   #ffffff;
+    --text-secondary: #d8cdbd;
+    --text-muted:     #9b8f7d;
+    --grid:           #3a2f22;
+    --accent:         #3987e5;
+    --accent-orange:  #d95926;
+    --accent-wash:    rgba(57, 135, 229, 0.14);
+    --frame-bg:       #0d0a07;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--frame-bg); }
+  body {
+    font-family: "IBM Plex Sans", -apple-system, sans-serif;
+    display: flex; flex-direction: column; align-items: center;
+    padding: 28px 16px 40px; min-height: 100vh;
+  }
+  .page-title { color: var(--text-secondary); font-size: 13px; margin: 0 0 4px; }
+  .page-sub { color: var(--text-muted); font-size: 12px; margin: 0 0 20px; font-family: "IBM Plex Mono", monospace; }
+
+  .stage {
+    width: min(920px, 94vw);
+    aspect-ratio: 16 / 9;
+    background: var(--surface-1);
+    border-radius: 10px;
+    position: relative;
+    overflow: hidden;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.08), 0 12px 40px rgba(0,0,0,0.16);
+  }
+  .scene {
+    position: absolute; inset: 0;
+    display: flex; flex-direction: column; justify-content: center;
+    padding: 6.5% 8%;
+    opacity: 0; pointer-events: none;
+    transition: opacity 0.5s ease;
+  }
+  .scene.active { opacity: 1; pointer-events: auto; }
+
+  .eyebrow {
+    font-family: "IBM Plex Mono", monospace; font-size: clamp(10px, 1.3vw, 13px);
+    color: var(--accent); text-transform: uppercase; letter-spacing: 0.08em;
+    margin: 0 0 1.2%; font-weight: 500;
+  }
+  h1.scene-h { font-size: clamp(20px, 3.4vw, 40px); font-weight: 650; color: var(--text-primary); margin: 0 0 1.4%; line-height: 1.12; text-wrap: balance; }
+  p.scene-p { font-size: clamp(11px, 1.5vw, 17px); color: var(--text-secondary); line-height: 1.5; margin: 0; max-width: 78%; }
+
+  /* Scene 1: hook */
+  #scene-1 { align-items: center; text-align: center; }
+  .hook-num { font-family: "IBM Plex Mono", monospace; font-size: clamp(48px, 9vw, 110px); font-weight: 600; color: var(--accent); line-height: 1; }
+  .hook-sub { font-size: clamp(13px, 1.8vw, 19px); color: var(--text-secondary); margin-top: 1%; }
+
+  /* Scene 2: setup */
+  .code-block {
+    background: var(--surface-2); border-radius: 8px; padding: 2.2%;
+    font-family: "IBM Plex Mono", monospace; font-size: clamp(9px, 1.15vw, 13px);
+    color: var(--text-secondary); line-height: 1.6; margin: 2% 0; white-space: pre;
+    overflow: hidden;
+  }
+  .code-block .kw { color: var(--accent); }
+  .code-block .cm { color: var(--text-muted); }
+  .gate-pill {
+    display: inline-flex; align-items: center; gap: 6px;
+    background: var(--accent-wash); color: var(--accent);
+    border-radius: 999px; padding: 0.6% 1.6%; font-family: "IBM Plex Mono", monospace;
+    font-size: clamp(9px, 1.2vw, 13px); font-weight: 600; margin-top: 1.5%;
+  }
+
+  /* Scene 3: terminal */
+  .term {
+    background: #14120f; border-radius: 8px; padding: 2.2% 2.4%;
+    font-family: "IBM Plex Mono", monospace; font-size: clamp(8.5px, 1.1vw, 12.5px);
+    color: #d8d4c8; line-height: 1.65; height: 78%; overflow: hidden;
+    box-shadow: inset 0 0 0 1px rgba(255,255,255,0.05);
+  }
+  .term .prompt { color: #6fcf97; }
+  .term .ok { color: #6fcf97; }
+  .term .num { color: #eda100; }
+  .term-line { white-space: pre; opacity: 0; animation: term-in 0.25s forwards; }
+
+  /* Scene 4: shape 14 story */
+  .quote-box {
+    border-left: 3px solid var(--accent-orange); padding: 1.4% 2.2%;
+    background: var(--surface-2); border-radius: 0 8px 8px 0; margin: 1.6% 0 2.2%;
+    font-family: "IBM Plex Mono", monospace; font-size: clamp(9px, 1.15vw, 13px);
+    color: var(--text-secondary); max-width: 82%;
+  }
+  .bars-mini { display: flex; align-items: flex-end; gap: 5%; height: 34%; margin-top: 1%; }
+  .bar-mini-col { display: flex; flex-direction: column; align-items: center; justify-content: flex-end; height: 100%; flex: 1; }
+  .bar-mini { width: 60%; border-radius: 4px 4px 0 0; }
+  .bar-mini-val { font-family: "IBM Plex Mono", monospace; font-size: clamp(9px, 1.1vw, 12px); font-weight: 600; color: var(--text-primary); margin-bottom: 4px; }
+  .bar-mini-lbl { font-size: clamp(7.5px, 0.95vw, 10.5px); color: var(--text-muted); margin-top: 6px; text-align: center; }
+
+  /* Scene 5: aggregate */
+  .stat-row { display: flex; gap: 5%; margin-top: 2.5%; }
+  .stat-tile { flex: 1; background: var(--surface-2); border-radius: 10px; padding: 3% 4%; }
+  .stat-label { font-size: clamp(9px, 1.1vw, 12px); color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.06em; }
+  .stat-value { font-family: "IBM Plex Mono", monospace; font-size: clamp(22px, 3.4vw, 38px); font-weight: 600; color: var(--text-primary); margin: 3% 0 1%; }
+  .stat-delta { display: inline-block; font-family: "IBM Plex Mono", monospace; font-size: clamp(9px, 1.1vw, 12px); font-weight: 600; color: var(--accent); background: var(--accent-wash); border-radius: 999px; padding: 2% 5%; }
+
+  /* Scene 6: tooling */
+  .tag-row { display: flex; flex-wrap: wrap; gap: 1.5%; margin-top: 2.5%; }
+  .tag { font-family: "IBM Plex Mono", monospace; font-size: clamp(8.5px, 1.05vw, 12px); color: var(--text-secondary); background: var(--surface-2); border-radius: 6px; padding: 1.2% 2%; }
+
+  /* Scene 7: close */
+  .close-list { margin-top: 2%; padding-left: 0; list-style: none; }
+  .close-list li { font-size: clamp(10px, 1.3vw, 15px); color: var(--text-secondary); margin-bottom: 1.4%; padding-left: 1.6em; position: relative; }
+  .close-list li::before { content: "→"; position: absolute; left: 0; color: var(--accent); }
+
+  @keyframes term-in { to { opacity: 1; } }
+
+  /* controls */
+  .controls { width: min(920px, 94vw); margin-top: 14px; display: flex; align-items: center; gap: 12px; }
+  .play-btn {
+    width: 34px; height: 34px; border-radius: 50%; border: none; cursor: pointer;
+    background: var(--accent); color: white; font-size: 13px; display: flex;
+    align-items: center; justify-content: center; flex-shrink: 0;
+  }
+  .scrub { flex: 1; display: flex; gap: 4px; }
+  .scrub-seg { flex: 1; height: 5px; border-radius: 3px; background: var(--grid); cursor: pointer; position: relative; overflow: hidden; }
+  .scrub-seg .fill { position: absolute; inset: 0; background: var(--accent); width: 0%; }
+  .scrub-seg.done .fill { width: 100%; }
+  .time-label { font-family: "IBM Plex Mono", monospace; font-size: 11px; color: var(--text-muted); flex-shrink: 0; min-width: 74px; text-align: right; }
+</style>
+
+<p class="page-title">Silent scene preview — no audio, timing approximates <code>docs/demo-video-script.md</code></p>
+<p class="page-sub">TikTok TechJam Track 3 — v_router2_autotuned.py</p>
+
+<div class="stage" id="stage">
+
+  <div class="scene active" id="scene-1">
+    <div class="hook-num">9.1×</div>
+    <div class="hook-sub">from switching precision alone — shape 14, chunk size barely mattered</div>
+  </div>
+
+  <div class="scene" id="scene-2">
+    <div class="eyebrow">The setup</div>
+    <h1 class="scene-h">Replace one class. Keep the math identical.</h1>
+    <div class="code-block"><span class="cm"># torch_transformer_benchmark.py</span>
+<span class="kw">class</span> UserOptimizedTransformer(BaselineTransformer):
+    <span class="cm"># Requirements: keep forward signature unchanged,</span>
+    <span class="cm"># return [batch, seq_len, d_model]</span>
+    <span class="kw">def</span> forward(self, x, valid_token_mask=<span class="kw">None</span>):
+        <span class="kw">return</span> super().forward(x, valid_token_mask)</div>
+    <div class="gate-pill">14 fixed shapes · rel &lt; 0.02 · abs &lt; 0.002</div>
+  </div>
+
+  <div class="scene" id="scene-3">
+    <div class="eyebrow">Run it live</div>
+    <div class="term" id="term-body"></div>
+  </div>
+
+  <div class="scene" id="scene-4">
+    <div class="eyebrow">Shape 14 didn't fit this run</div>
+    <h1 class="scene-h" style="font-size:clamp(16px,2.6vw,28px)">A real dead end, then a real measurement</h1>
+    <div class="quote-box">job 776587 — killed at the 15-min SLURM limit, zero progress logged</div>
+    <div class="bars-mini">
+      <div class="bar-mini-col"><div class="bar-mini-val">74.6s</div><div class="bar-mini" style="height:100%;background:var(--accent)"></div><div class="bar-mini-lbl">chunk=4<br>fp32</div></div>
+      <div class="bar-mini-col"><div class="bar-mini-val">68.3s</div><div class="bar-mini" style="height:91%;background:var(--accent)"></div><div class="bar-mini-lbl">chunk=8<br>fp32</div></div>
+      <div class="bar-mini-col"><div class="bar-mini-val">8.2s</div><div class="bar-mini" style="height:11%;background:var(--accent-orange)"></div><div class="bar-mini-lbl">chunk=8<br>fp16</div></div>
+      <div class="bar-mini-col"><div class="bar-mini-val">8.3s</div><div class="bar-mini" style="height:11%;background:var(--accent-orange)"></div><div class="bar-mini-lbl">chunk=16<br>fp16</div></div>
+    </div>
+  </div>
+
+  <div class="scene" id="scene-5">
+    <div class="eyebrow">The aggregate win</div>
+    <h1 class="scene-h" style="font-size:clamp(16px,2.6vw,28px)">13/13 correct, every stacked change confirmed on real GPU hardware</h1>
+    <div class="stat-row">
+      <div class="stat-tile">
+        <div class="stat-label">Median speedup</div>
+        <div class="stat-value">5.36×</div>
+        <div class="stat-delta">from 4.57×</div>
+      </div>
+      <div class="stat-tile">
+        <div class="stat-label">Geomean speedup</div>
+        <div class="stat-value">6.46×</div>
+        <div class="stat-delta">+33.2%</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="scene" id="scene-6">
+    <div class="eyebrow">How it was built</div>
+    <h1 class="scene-h" style="font-size:clamp(16px,2.6vw,28px)">Claude Code, dispatching to real GPU hardware, verifying every claim</h1>
+    <p class="scene-p">Every number in this video came from a measured run — including this chart.</p>
+    <div class="tag-row">
+      <div class="tag">TODO.md</div>
+      <div class="tag">journal.jsonl</div>
+      <div class="tag">AGENTS.md</div>
+      <div class="tag">leaderboard.md</div>
+      <div class="tag">RunPod A100-80</div>
+    </div>
+  </div>
+
+  <div class="scene" id="scene-7">
+    <div class="eyebrow">What's left</div>
+    <h1 class="scene-h" style="font-size:clamp(16px,2.6vw,28px)">Honest, not finished</h1>
+    <ul class="close-list">
+      <li>Pretransposed Linears validated in isolation, not yet stacked into the router</li>
+      <li>Shape 13 now has an explicit route — five more shapes got the same fix today</li>
+      <li>Full write-up and reproduction steps in the repo</li>
+    </ul>
+  </div>
+
+</div>
+
+<div class="controls">
+  <button class="play-btn" id="playBtn">❚❚</button>
+  <div class="scrub" id="scrub"></div>
+  <div class="time-label" id="timeLabel">0:00 / 2:05</div>
+</div>
+
+<script>
+(function () {
+  const scenes = [
+    { id: "scene-1", dur: 8 },
+    { id: "scene-2", dur: 15 },
+    { id: "scene-3", dur: 32 },
+    { id: "scene-4", dur: 35 },
+    { id: "scene-5", dur: 15 },
+    { id: "scene-6", dur: 12 },
+    { id: "scene-7", dur: 10 },
+  ];
+  const total = scenes.reduce((a, s) => a + s.dur, 0);
+  const scrub = document.getElementById("scrub");
+  const segs = scenes.map((s, i) => {
+    const seg = document.createElement("div");
+    seg.className = "scrub-seg";
+    seg.innerHTML = '<div class="fill"></div>';
+    seg.addEventListener("click", () => goTo(i));
+    scrub.appendChild(seg);
+    return seg;
+  });
+
+  const termLines = [
+    { t: "cand", cls: "prompt", text: "$ python3 bench_harness.py --candidate candidates/v_router2_autotuned.py \\" },
+    { t: "cand", cls: "prompt", text: "    --shapes 1,2,3,4,5,6,7,8,9,10,11,12,13 --dtype float32 --device cuda" },
+    { t: "gap" },
+    { t: "cand", cls: "", text: "shape  1: correct  speedup=4.88x" },
+    { t: "cand", cls: "", text: "shape  2: correct  speedup=13.73x" },
+    { t: "cand", cls: "", text: "shape  3: correct  speedup=13.35x" },
+    { t: "cand", cls: "", text: "  ...  " },
+    { t: "cand", cls: "", text: "shape 13: correct  speedup=14.16x" },
+    { t: "gap" },
+    { t: "cand", cls: "ok", text: "# Out of bounds values : 0 OK   (13/13 shapes)" },
+    { t: "cand", cls: "", text: "median_speedup:  <span class=\"num\">5.36x</span>" },
+    { t: "cand", cls: "", text: "geomean_speedup: <span class=\"num\">6.46x</span>" },
+  ];
+
+  let idx = 0, playing = true, sceneTimer = null, tickTimer = null, elapsedInScene = 0;
+  const playBtn = document.getElementById("playBtn");
+  const timeLabel = document.getElementById("timeLabel");
+
+  function fmt(s) { s = Math.round(s); return Math.floor(s/60) + ":" + String(s%60).padStart(2,"0"); }
+
+  function elapsedBefore(i) { let e = 0; for (let k=0;k<i;k++) e += scenes[k].dur; return e; }
+
+  function renderTerminal() {
+    const body = document.getElementById("term-body");
+    body.innerHTML = "";
+    let delay = 0;
+    termLines.forEach(line => {
+      if (line.t === "gap") { delay += 0.15; return; }
+      const div = document.createElement("div");
+      div.className = "term-line " + (line.cls || "");
+      div.innerHTML = line.text;
+      div.style.animationDelay = delay + "s";
+      body.appendChild(div);
+      delay += 0.16;
+    });
+  }
+
+  function activate(i) {
+    document.querySelectorAll(".scene").forEach(el => el.classList.remove("active"));
+    document.getElementById(scenes[i].id).classList.add("active");
+    segs.forEach((seg, k) => {
+      seg.classList.toggle("done", k < i);
+      seg.querySelector(".fill").style.width = k < i ? "100%" : (k === i ? "0%" : "0%");
+    });
+    if (scenes[i].id === "scene-3") renderTerminal();
+  }
+
+  function goTo(i) {
+    clearTimeout(sceneTimer); clearInterval(tickTimer);
+    idx = i; elapsedInScene = 0;
+    activate(idx);
+    if (playing) scheduleNext();
+    tick();
+  }
+
+  function scheduleNext() {
+    clearTimeout(sceneTimer);
+    const remain = (scenes[idx].dur - elapsedInScene) * 1000;
+    sceneTimer = setTimeout(() => {
+      if (idx < scenes.length - 1) { idx++; elapsedInScene = 0; activate(idx); scheduleNext(); }
+      else { playing = false; playBtn.textContent = "▶"; clearInterval(tickTimer); }
+    }, remain);
+  }
+
+  function tick() {
+    clearInterval(tickTimer);
+    const start = Date.now() - elapsedInScene * 1000;
+    tickTimer = setInterval(() => {
+      elapsedInScene = (Date.now() - start) / 1000;
+      const seg = segs[idx];
+      const pct = Math.min(100, (elapsedInScene / scenes[idx].dur) * 100);
+      seg.querySelector(".fill").style.width = pct + "%";
+      const totalElapsed = elapsedBefore(idx) + elapsedInScene;
+      timeLabel.textContent = fmt(totalElapsed) + " / " + fmt(total);
+      if (!playing) clearInterval(tickTimer);
+    }, 100);
+  }
+
+  playBtn.addEventListener("click", () => {
+    playing = !playing;
+    playBtn.textContent = playing ? "❚❚" : "▶";
+    if (playing) { scheduleNext(); tick(); }
+    else { clearTimeout(sceneTimer); clearInterval(tickTimer); }
+  });
+
+  activate(0);
+  scheduleNext();
+  tick();
+})();
+</script>
