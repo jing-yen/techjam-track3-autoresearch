@@ -13,9 +13,10 @@
 > inside run-to-run noise). The SoC-cluster numbers earlier in this README's
 > history (3.71x/4.02x, iter 52) remain real and are kept for the record as
 > our previous canonical device, not retracted.
-> `candidates/best.py` is stale and has not received the guarded update
-> (`AGENTS.md` §2) for this candidate yet — treat `v_router2_autotuned.py` as
-> current, not `best.py`, until that update lands.
+> `candidates/best.py` now carries this exact candidate (guarded update per
+> `AGENTS.md` §2, byte-identical to `v_router2_autotuned.py`) — both names
+> point at the same file; `v_router2_autotuned.py` is kept as the named
+> research-history copy.
 
 ## For judges — how to evaluate this submission
 
@@ -29,7 +30,7 @@ stub, so the script always runs.
 **Fastest check — one shape through the organizer's unmodified script:**
 
 ```bash
-python torch_transformer_benchmark.py \
+python3 torch_transformer_benchmark.py \
   --batch-size 64 --seq-len 1024 --d-model 128 --heads 4 \
   --ffn-dim 128 --layers 4 --causal --dtype float32
 ```
@@ -40,7 +41,7 @@ roughly **14x** on this shape.
 **Full sweep — all 14 official shapes, correctness plus speed as JSON:**
 
 ```bash
-python runner.py --candidates candidates/v_router2_autotuned.py \
+python3 runner.py --candidates candidates/v_router2_autotuned.py \
   --shapes all --dtype float32 --mode local
 ```
 
@@ -91,7 +92,7 @@ Three things make it work:
 | `TODO.md` | Research queue. Every item carries `file:line` evidence and a falsification gate. |
 | `LOG.md` / `journal.jsonl` | Human- and machine-readable experiment log. |
 | `leaderboard.md` | Current best correct candidate + per-shape speedups. |
-| `candidates/best.py` | Current best implementation *(stale as of this writing — pending the guarded update; the actual current best is `candidates/v_router2_autotuned.py`, see the Status banner at the top)*. |
+| `candidates/best.py` | Current best implementation — byte-identical to `candidates/v_router2_autotuned.py` (guarded update landed, see the Status banner). |
 | `bench_harness.py` | Reuses the organizer benchmark; emits per-shape correctness + speedup as JSON. |
 | `runner.py` + `sbatch_template.sh` | Evaluate candidates on the cluster (Slurm array) or locally. |
 | `research-loop.sh` + `prompts/` + `schemas/` | The research layer: Claude plan → Codex review → Claude reconcile. |
@@ -113,7 +114,7 @@ cd techjam-track3-autoresearch
 
 conda create -n techjam python=3.11 -y && conda activate techjam
 pip install torch
-python -c "import torch; print(torch.__version__, torch.cuda.is_available())"   # expect True
+python3 -c "import torch; print(torch.__version__, torch.cuda.is_available())"   # expect True
 ```
 
 For Slurm clusters, fill in `cluster.config.json` (ssh host, gres, module load,
@@ -122,23 +123,23 @@ remote workdir) — see `CLUSTER_SETUP.md`.
 ## Steps to reproduce our results
 
 ```bash
-# 1. Plumbing check (CPU, no GPU needed). Expect 9/9 pass.
-python tests/test_bench_harness.py && python tests/test_runner.py
+# 1. Plumbing check (CPU, no GPU needed). Expect 10/10 pass (6/6 + 4/4).
+python3 tests/test_bench_harness.py && python3 tests/test_runner.py
 
-# 2. Correctness smoke test on tiny shapes (CPU). NOTE: candidates/best.py is
-#    stale (pending the guarded update) -- use the actual current best below.
-python bench_harness.py --candidate candidates/v_router2_autotuned.py --shapes dev --device cpu
+# 2. Correctness smoke test on tiny shapes (CPU). candidates/best.py and
+#    candidates/v_router2_autotuned.py are byte-identical -- either works.
+python3 bench_harness.py --candidate candidates/best.py --shapes dev --device cpu
 
 # 3. Capture the environment for the report. Run ON the GPU node.
 bash scripts/capture_env.sh > docs/environment.txt
 
 # 4. The headline result: all 13 shapes with a reference, on GPU (shape 14
 #    has no reference -- see Limitations -- run it separately, --shapes 14).
-python runner.py --candidates candidates/v_router2_autotuned.py --shapes all --dtype float32
+python3 runner.py --candidates candidates/v_router2_autotuned.py --shapes all --dtype float32
 
 # 5. Reproduce a single shape through the organizer's own script, unmodified,
 #    as an independent check that our harness agrees with it. Example, shape 1:
-python torch_transformer_benchmark.py \
+python3 torch_transformer_benchmark.py \
   --batch-size 64 --seq-len 128 --d-model 128 --heads 4 \
   --ffn-dim 128 --layers 4 --causal --dtype float32
 ```
@@ -457,10 +458,7 @@ excluded — it routes through `amp` and is confirmed still its best option
 after the systematic re-route (4.06x). It was also the source shape for the
 fp16-casting-overhead profiling finding described above.
 
-**What we would do next, in order:** run the guarded `best.py` update itself
-on our now-canonical RunPod numbers (`v_router2_autotuned.py` has not been
-promoted to `best.py` yet — see the Status banner, and has not happened
-since before this session's changes); optionally cross-check today's numbers
+**What we would do next, in order:** optionally cross-check today's numbers
 back on the SoC A100-80 cluster too, now a secondary device rather than a
 submission blocker; apply pretransposed Linears somewhere they might
 actually help (the CUDA-graph routes rejected it, but it was never re-tried

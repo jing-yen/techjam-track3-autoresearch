@@ -13,7 +13,8 @@ to live in this section is kept below under "Previous canonical device
 
 `candidates/v_router2_autotuned.py` (journal iter 55/57/58, re-confirmed
 with full per-shape correctness evidence at iter 61, RunPod pod
-`fzbwqgylwr24eo`). Four stacked changes over `v_router2.py`:
+`fzbwqgylwr24eo`). **Guarded update landed** — `candidates/best.py` is now
+byte-identical to this file. Four stacked changes over `v_router2.py`:
 1. T7b's `@triton.autotune` on the shared AddNorm kernel.
 2. Explicit `chunked14amp` route for shape 14 (was falling through to
    `compile`, which never finishes for this shape — iter 7). Now ~8.1s/pass.

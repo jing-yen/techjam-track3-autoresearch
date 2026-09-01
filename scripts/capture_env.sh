@@ -26,7 +26,7 @@ echo "## Disk"
 df -h . 2>/dev/null
 echo
 echo "## Software"
-python -c "
+python3 -c "
 import torch, platform
 print('python  ', platform.python_version())
 print('torch   ', torch.__version__)

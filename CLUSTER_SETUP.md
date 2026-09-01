@@ -48,7 +48,7 @@ cd techjam-track3-autoresearch
 # A CUDA-enabled PyTorch (Linux pip wheels ship CUDA by default):
 conda create -n techjam python=3.11 -y && conda activate techjam
 pip install torch
-python -c "import torch; print(torch.__version__, torch.cuda.is_available())"  # expect True
+python3 -c "import torch; print(torch.__version__, torch.cuda.is_available())"  # expect True
 ```
 
 If your conda lives elsewhere, update `module_load` in `cluster.config.json`
@@ -73,8 +73,8 @@ jobs don't schedule.
 
 ```bash
 # from your Mac (mode: ssh) OR on the login node (set mode: slurm):
-python runner.py --candidates candidates/best.py --shapes all      # measure the seed on GPU
-python tests/test_bench_harness.py && python tests/test_runner.py   # sanity
+python3 runner.py --candidates candidates/best.py --shapes all      # measure the seed on GPU
+python3 tests/test_bench_harness.py && python3 tests/test_runner.py   # sanity
 
 # then launch the swarm from Claude Code via the Workflow tool with, e.g.:
 #   args = { runnerMode: "ssh", device: "cuda", shapes: "official-safe",
@@ -83,6 +83,6 @@ python tests/test_bench_harness.py && python tests/test_runner.py   # sanity
 
 ## 5. First real numbers
 
-The seed's speedups so far are CPU noise. `python runner.py --candidates
+The seed's speedups so far are CPU noise. `python3 runner.py --candidates
 candidates/best.py --shapes all` on an A100/H100 gives the first honest
 per-shape speedups and populates `leaderboard.md`.

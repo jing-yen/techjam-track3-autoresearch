@@ -10,7 +10,7 @@ reading and appending to git-tracked state. Follow this protocol.
   cluster (or on the GPU login node itself).
 - Fill in `cluster.config.json` (partition, account, gres, module load, ssh
   host / remote workdir). See that file.
-- Smoke test: `python runner.py --candidates candidates/best.py --shapes official-safe`
+- Smoke test: `python3 runner.py --candidates candidates/best.py --shapes official-safe`
   should return JSON with `correctness_passed: true` and real speedups.
 - Pick a short **agent-id** (e.g. `opus-1`, `sonnet-a`, `alice`). All your
   candidate files are namespaced `candidates/<agent-id>-stepN.py` so filenames
@@ -32,7 +32,7 @@ Each turn does exactly one experiment:
    candidate to `candidates/<agent-id>-stepN.py`. Preserve every invariant in the
    PROGRAM.md correctness contract.
 5. **Evaluate on the cluster:**
-   `python runner.py --candidates candidates/<agent-id>-stepN.py --shapes official-safe`
+   `python3 runner.py --candidates candidates/<agent-id>-stepN.py --shapes official-safe`
    (use `--shapes all` for a finalist; `--shapes dev --mode local --device cpu`
    for a quick laptop sanity check). Read the returned JSON.
 6. **Record:** append one line to `journal.jsonl` (schema below) and a short
