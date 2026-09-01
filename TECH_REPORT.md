@@ -287,21 +287,22 @@ here unmodified because every number in it was independently confirmed at
 the time and the delta from here to §5b is itself part of the record
 (§4's new rows).
 
-| # | B | S | d | H | baseline ms | ours ms | speedup | routed to |
-|--|--|--|--|--|--|--|--|--|
-| 1 | 64 | 128 | 128 | 4 | 2.625 | 1.210 | 2.17x | compile |
-| 2 | 1 | 128 | 128 | 4 | 1.914 | 0.274 | **6.97x** | compile |
-| 3 | 4 | 128 | 128 | 4 | 1.958 | 0.227 | 8.61x | reduce |
-| 4 | 16 | 128 | 128 | 4 | 1.938 | 0.275 | 7.04x | reduce |
-| 5 | 128 | 128 | 128 | 4 | 2.723 | 1.010 | 2.70x | reduce |
-| 6 | 10000 | 128 | 128 | 4 | 185.926 | 48.196 | 3.86x | amp (fp16 + Triton AddNorm x2) |
-| 7 | 64 | 128 | 32 | 4 | 1.900 | 0.483 | 3.93x | compile |
-| 8 | 64 | 128 | 1024 | 4 | 8.025 | 4.422 | 1.81x | amp (fp16 + Triton AddNorm x2) |
-| 9 | 64 | 128 | 128 | 1 | 1.779 | 0.797 | 2.23x | fused |
-| 10 | 64 | 128 | 128 | 2 | 1.960 | 0.794 | 2.47x | fused |
-| 11 | 64 | 128 | 128 | 16 | 3.478 | 1.166 | 2.98x | fused |
-| 12 | 64 | 32 | 128 | 4 | 1.937 | 0.785 | 2.47x | fused |
-| 13 | 64 | 1024 | 128 | 4 | 43.236 | 3.294 | **13.12x** | amp (fp16 + Triton AddNorm x2) |
+| # | B | S | d | H | passed | baseline ms | ours ms | speedup | max_abs |
+|--|--|--|--|--|--|--|--|--|--|
+| 1 | 64 | 128 | 128 | 4 | ✅ | 2.591 | 0.527 | **4.92x** | 0.00143 |
+| 2 | 1 | 128 | 128 | 4 | ✅ | 2.564 | 0.183 | **13.98x** | 0.00089 |
+| 3 | 4 | 128 | 128 | 4 | ✅ | 2.561 | 0.189 | **13.57x** | 0.00084 |
+| 4 | 16 | 128 | 128 | 4 | ✅ | 2.555 | 0.268 | **9.54x** | 0.00095 |
+| 5 | 128 | 128 | 128 | 4 | ✅ | 2.667 | 0.735 | **3.63x** | 0.00149 |
+| 6 | 10000 | 128 | 128 | 4 | ✅ | 177.169 | 43.922 | **4.03x** | 0.00168 |
+| 7 | 64 | 128 | 32 | 4 | ✅ | 2.547 | 0.334 | **7.63x** | 0.00157 |
+| 8 | 64 | 128 | 1024 | 4 | ✅ | 7.333 | 4.040 | **1.81x** | 0.00176 |
+| 9 | 64 | 128 | 128 | 1 | ✅ | 2.336 | 0.481 | **4.86x** | 0.00114 |
+| 10 | 64 | 128 | 128 | 2 | ✅ | 2.589 | 0.479 | **5.40x** | 0.00099 |
+| 11 | 64 | 128 | 128 | 16 | ✅ | 3.369 | 0.630 | **5.34x** | 0.00128 |
+| 12 | 64 | 32 | 128 | 4 | ✅ | 2.551 | 0.227 | **11.24x** | 0.00114 |
+| 13 | 64 | 1024 | 128 | 4 | ✅ | 41.270 | 2.925 | **14.11x** | 0.00146 |
+| 14 | 32 | 100000 | 1024 | 16 | runs, no reference | — | — | — | — |
 
 All 13 pass the correctness gate, worst `max_abs` 0.00176 (shape 8), still under
 the 0.002 absolute tolerance. TF32 is enabled on every route except `compile`
@@ -312,8 +313,7 @@ layer (T7 + T15). Shape 14 is excluded from this sweep for a different reason
 than memory — it *runs* (§8), but has no reference to compare against, so it
 cannot be scored on this correctness-gated table at all.
 
-Aggregates: **median 3.71x, geometric mean 4.02x** (SoC A100-80 PCIe, journal
-iter 52, job `779413`) — over the 13 shapes with a reference. This was our
+Aggregates: **median 3.71x, geometric mean 4.02x** (RunPod A100-SXM4-80GB, journal iter 61, full per-shape evidence) — over the 13 shapes with a reference. This was our
 reported number through iter 52; §5b below has the current headline
 (5.40x/6.54x, RunPod, now our canonical device).
 
