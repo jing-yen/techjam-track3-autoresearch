@@ -19,13 +19,22 @@
     --orange-wash:    rgba(235, 104, 52, 0.10);
   }
   * { box-sizing: border-box; }
-  html, body { margin: 0; height: 100%; overflow: hidden; background: var(--surface-1); }
-  body { font-family: "IBM Plex Sans", -apple-system, sans-serif; }
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #0b0b0b; }
+  body { font-family: "IBM Plex Sans", -apple-system, sans-serif; display: flex; align-items: center; justify-content: center; }
 
-  #deck { position: relative; width: 100%; height: 100vh; }
+  /* 16:9 stage, letterboxed to fit whatever window/viewport it's shown in --
+     keeps framing consistent for screen recording regardless of browser size. */
+  #stage {
+    position: relative; aspect-ratio: 16 / 9;
+    width: min(100vw, 177.78vh); height: min(100vh, 56.25vw);
+    background: var(--surface-1); overflow: hidden;
+    box-shadow: 0 0 60px rgba(0,0,0,0.45);
+    container-type: size;
+  }
+  #deck { position: absolute; inset: 0; }
   .slide {
     position: absolute; inset: 0; display: flex; flex-direction: column;
-    justify-content: center; padding: 4.5vh 7vw 4.5vh;
+    justify-content: center; padding: 4.5cqh 7cqw 4.5cqh;
     opacity: 0; pointer-events: none; transform: translateX(24px);
     transition: opacity 0.35s ease, transform 0.35s ease;
   }
@@ -35,13 +44,13 @@
     font-family: "IBM Plex Mono", monospace; font-size: 13px; color: var(--accent);
     text-transform: uppercase; letter-spacing: 0.1em; font-weight: 500; margin: 0 0 10px;
   }
-  h1.slide-h { font-size: clamp(24px, 3.4vw, 42px); font-weight: 650; color: var(--text-primary); margin: 0 0 10px; line-height: 1.15; text-wrap: balance; letter-spacing: -0.01em; }
-  h2.slide-h2 { font-size: clamp(14px, 1.6vw, 18px); font-weight: 400; color: var(--text-secondary); margin: 0 0 18px; line-height: 1.5; max-width: 68ch; }
-  p.slide-p { font-size: clamp(13px, 1.35vw, 16px); color: var(--text-secondary); line-height: 1.6; max-width: 62ch; }
+  h1.slide-h { font-size: clamp(24px, 3.4cqw, 42px); font-weight: 650; color: var(--text-primary); margin: 0 0 10px; line-height: 1.15; text-wrap: balance; letter-spacing: -0.01em; }
+  h2.slide-h2 { font-size: clamp(16px, 1.8cqw, 20px); font-weight: 400; color: var(--text-secondary); margin: 0 0 18px; line-height: 1.5; max-width: 68ch; }
+  p.slide-p { font-size: clamp(15px, 1.55cqw, 18px); color: var(--text-secondary); line-height: 1.6; max-width: 62ch; }
 
-  .chart-box { width: min(1150px, 84vw); height: min(46vh, 440px); margin-top: 1vh; }
+  .chart-box { width: min(1150px, 84cqw); height: min(46cqh, 440px); margin-top: 1cqh; }
 
-  .gate-pill { display: inline-flex; align-items: center; gap: 8px; background: var(--accent-wash); color: var(--accent); border-radius: 999px; padding: 7px 16px; font-family: "IBM Plex Mono", monospace; font-size: clamp(11px,1.15vw,13px); font-weight: 600; margin-top: 12px; }
+  .gate-pill { display: inline-flex; align-items: center; gap: 8px; background: var(--accent-wash); color: var(--accent); border-radius: 999px; padding: 7px 16px; font-family: "IBM Plex Mono", monospace; font-size: clamp(11px,1.15cqw,13px); font-weight: 600; margin-top: 12px; }
 
   /* Title lockup (slide 1) */
   .title-lockup { display: flex; align-items: center; gap: 14px; margin-bottom: 24px; }
@@ -49,68 +58,68 @@
   .tiktok-wordmark { font-family: "IBM Plex Mono", monospace; font-weight: 500; font-size: 15px; color: var(--text-muted); letter-spacing: 0.02em; }
 
   /* Team roster */
-  .team-row { display: flex; gap: 3%; margin-top: 2.5vh; }
+  .team-row { display: flex; gap: 3%; margin-top: 2.5cqh; }
   .team-card { flex: 1; background: var(--surface-2); border-radius: 12px; padding: 4% 5%; }
   .team-top { display: flex; align-items: center; gap: 13px; }
   .team-avatar { width: 52px; height: 52px; border-radius: 50%; object-fit: cover; flex: 0 0 auto; border: 2.5px solid; }
   .team-avatar.rt-research { border-color: var(--accent); }
   .team-avatar.rt-impl { border-color: var(--accent-orange); }
-  .team-name { font-size: clamp(14px,1.5vw,17px); font-weight: 650; color: var(--text-primary); }
-  .team-role { display: block; font-family: "IBM Plex Mono", monospace; font-size: clamp(9.5px,1vw,11px); text-transform: uppercase; letter-spacing: 0.05em; margin-top: 3px; }
+  .team-name { font-size: clamp(14px,1.5cqw,17px); font-weight: 650; color: var(--text-primary); }
+  .team-role { display: block; font-family: "IBM Plex Mono", monospace; font-size: clamp(9.5px,1cqw,11px); text-transform: uppercase; letter-spacing: 0.05em; margin-top: 3px; }
   .team-role.rt-research { color: var(--accent); }
   .team-role.rt-impl { color: var(--accent-orange); }
-  .team-body { font-size: clamp(10.5px,1.1vw,12.5px); color: var(--text-secondary); line-height: 1.5; margin-top: 12px; }
+  .team-body { font-size: clamp(12px,1.25cqw,14px); color: var(--text-secondary); line-height: 1.5; margin-top: 12px; }
 
   /* Two-column slides (objective + hardware) */
-  .hw-row { display: flex; align-items: center; gap: 5%; margin-top: 2vh; }
+  .hw-row { display: flex; align-items: center; gap: 5%; margin-top: 2cqh; }
   .hw-left { flex: 0 0 52%; }
   .hw-right { flex: 1; display: flex; align-items: center; justify-content: center; flex-direction: column; }
   .obj-right { flex: 1; display: flex; align-items: center; justify-content: center; flex-direction: column; }
   .obj-diagram { width: 100%; max-width: 380px; border-radius: 8px; border: 1px solid var(--grid); box-shadow: 0 6px 20px rgba(0,0,0,0.07); }
   .obj-caption { text-align: center; font-family: "IBM Plex Mono", monospace; font-size: 10px; color: var(--text-muted); margin-top: 8px; }
-  .spec-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-top: 2.2vh; }
+  .spec-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-top: 2.2cqh; }
   .spec-tile { background: var(--surface-2); border-radius: 12px; padding: 10px 12px; }
-  .spec-label { font-size: clamp(9px,0.95vw,11px); color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em; }
-  .spec-value { font-family: "IBM Plex Mono", monospace; font-size: clamp(13.5px,1.6vw,18px); font-weight: 600; color: var(--text-primary); margin-top: 4px; }
+  .spec-label { font-size: clamp(9px,0.95cqw,11px); color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em; }
+  .spec-value { font-family: "IBM Plex Mono", monospace; font-size: clamp(13.5px,1.6cqw,18px); font-weight: 600; color: var(--text-primary); margin-top: 4px; }
   .gpu-photo { width: 100%; max-width: 320px; border-radius: 12px; border: 1px solid var(--grid); box-shadow: 0 6px 20px rgba(0,0,0,0.08); }
   .gpu-caption { text-align: center; font-family: "IBM Plex Mono", monospace; font-size: 11px; color: var(--text-muted); margin-top: 10px; letter-spacing: 0.03em; }
 
   /* Architecture system diagram */
-  .arch-wrap { margin-top: 1vh; max-width: 1150px; }
+  .arch-wrap { margin-top: 1cqh; max-width: 1150px; }
   .arch-svg { width: 100%; height: auto; }
-  .arch-caption { font-size: clamp(11px,1.15vw,13px); color: var(--text-muted); margin-top: 1.2vh; max-width: 84ch; line-height: 1.5; }
-  .model-row { display: flex; align-items: center; gap: 10px; margin-top: 1.2vh; }
+  .arch-caption { font-size: clamp(12.5px,1.3cqw,14.5px); color: var(--text-muted); margin-top: 1.2cqh; max-width: 84ch; line-height: 1.5; }
+  .model-row { display: flex; align-items: center; gap: 10px; margin-top: 1.2cqh; }
   .model-row-label { font-family: "IBM Plex Mono", monospace; font-size: 10.5px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em; }
   .model-chip { font-family: "IBM Plex Mono", monospace; font-size: 11px; font-weight: 600; color: var(--text-secondary); background: var(--surface-2); border: 1px solid var(--grid); border-radius: 999px; padding: 4px 12px; }
 
   /* Wrap-up: failure grid */
-  .fail-section-label { font-family: "IBM Plex Mono", monospace; font-size: clamp(10px,1.05vw,12px); color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.06em; margin-top: 2vh; margin-bottom: 10px; }
+  .fail-section-label { font-family: "IBM Plex Mono", monospace; font-size: clamp(10px,1.05cqw,12px); color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.06em; margin-top: 2cqh; margin-bottom: 10px; }
   .fail-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; max-width: 1000px; }
   .fail-card { background: var(--surface-2); border-radius: 9px; padding: 9px 12px; border-left: 3px solid var(--grid); }
   .fail-card.tag-reject { border-left-color: #c94a3f; }
   .fail-card.tag-narrow { border-left-color: var(--accent-orange); }
-  .fail-card-title { font-size: clamp(10.5px,1.1vw,12px); font-weight: 650; color: var(--text-primary); }
-  .fail-card-body { font-size: clamp(9.5px,1vw,11px); color: var(--text-muted); line-height: 1.4; margin-top: 3px; }
+  .fail-card-title { font-size: clamp(12px,1.25cqw,13.5px); font-weight: 650; color: var(--text-primary); }
+  .fail-card-body { font-size: clamp(11px,1.15cqw,12.5px); color: var(--text-muted); line-height: 1.4; margin-top: 3px; }
 
   /* Wrap-up: tiered recap table */
-  .recap-table { margin-top: 2vh; max-width: 980px; }
+  .recap-table { margin-top: 2cqh; max-width: 980px; }
   .recap-row { display: flex; align-items: center; gap: 14px; padding: 9px 4px; border-bottom: 1px solid var(--grid); }
   .recap-row:first-child { border-top: 1px solid var(--grid); }
-  .recap-step { flex: 0 0 30%; font-size: clamp(11px,1.15vw,13px); font-weight: 600; color: var(--text-primary); }
-  .recap-value { flex: 0 0 9%; font-family: "IBM Plex Mono", monospace; font-size: clamp(12px,1.3vw,15px); font-weight: 600; color: var(--text-primary); }
-  .recap-delta { flex: 0 0 9%; font-family: "IBM Plex Mono", monospace; font-size: clamp(10px,1.05vw,12px); color: var(--text-muted); }
-  .recap-tag { flex: 0 0 auto; font-family: "IBM Plex Mono", monospace; font-size: clamp(9px,0.95vw,10.5px); font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; padding: 3px 10px; border-radius: 999px; }
+  .recap-step { flex: 0 0 30%; font-size: clamp(12.5px,1.3cqw,14.5px); font-weight: 600; color: var(--text-primary); }
+  .recap-value { flex: 0 0 9%; font-family: "IBM Plex Mono", monospace; font-size: clamp(12px,1.3cqw,15px); font-weight: 600; color: var(--text-primary); }
+  .recap-delta { flex: 0 0 9%; font-family: "IBM Plex Mono", monospace; font-size: clamp(10px,1.05cqw,12px); color: var(--text-muted); }
+  .recap-tag { flex: 0 0 auto; font-family: "IBM Plex Mono", monospace; font-size: clamp(9px,0.95cqw,10.5px); font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; padding: 3px 10px; border-radius: 999px; }
   .recap-tag.tag-s { background: var(--accent-wash); color: var(--accent); }
   .recap-tag.tag-unlock { background: var(--orange-wash); color: var(--accent-orange); }
   .recap-tag.tag-rigor { background: var(--surface-3); color: var(--text-secondary); }
   .recap-tag.tag-base { background: var(--surface-2); color: var(--text-muted); border: 1px solid var(--grid); }
-  .recap-why { flex: 1; font-size: clamp(10px,1.05vw,11.5px); color: var(--text-muted); }
-  .wrap-footer { font-size: clamp(10.5px,1.1vw,12.5px); color: var(--text-secondary); line-height: 1.55; margin-top: 2vh; max-width: 84ch; }
-  .wrap-close { font-size: clamp(10.5px,1.1vw,12.5px); color: var(--text-muted); margin-top: 1.4vh; font-family: "IBM Plex Mono", monospace; }
+  .recap-why { flex: 1; font-size: clamp(10px,1.05cqw,11.5px); color: var(--text-muted); }
+  .wrap-footer { font-size: clamp(10.5px,1.1cqw,12.5px); color: var(--text-secondary); line-height: 1.55; margin-top: 2cqh; max-width: 84ch; }
+  .wrap-close { font-size: clamp(10.5px,1.1cqw,12.5px); color: var(--text-muted); margin-top: 1.4cqh; font-family: "IBM Plex Mono", monospace; }
 
   /* Nav & chrome */
   .nav-bar {
-    position: fixed; bottom: 18px; left: 50%; transform: translateX(-50%);
+    position: absolute; bottom: 18px; left: 50%; transform: translateX(-50%);
     display: flex; align-items: center; gap: 10px; z-index: 20;
     background: var(--surface-2); border-radius: 999px; padding: 8px 14px;
     box-shadow: 0 2px 10px rgba(0,0,0,0.12);
@@ -125,16 +134,17 @@
   .notes-btn.on { color: var(--accent); border-color: var(--accent); }
 
   #notesPanel {
-    position: fixed; left: 0; right: 0; bottom: 0; background: var(--surface-2);
-    border-top: 1px solid var(--grid); padding: 20px 8vw 60px;
+    position: absolute; left: 0; right: 0; bottom: 0; background: var(--surface-2);
+    border-top: 1px solid var(--grid); padding: 20px 8cqw 60px;
     transform: translateY(100%); transition: transform 0.3s ease; z-index: 15;
-    max-height: 34vh; overflow-y: auto;
+    max-height: 34cqh; overflow-y: auto;
   }
   #notesPanel.open { transform: translateY(0); }
   .notes-kicker { font-family: "IBM Plex Mono", monospace; font-size: 11px; color: var(--accent); text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 8px; }
-  .notes-text { font-size: 14px; color: var(--text-secondary); line-height: 1.65; max-width: 78ch; }
+  .notes-text { font-size: 14px; color: var(--text-secondary); line-height: 1.85; max-width: 78ch; white-space: pre-line; }
 </style>
 
+<div id="stage">
 <div id="deck">
   <!-- 1: TEAM -->
   <div class="slide active" data-notes="notes-1">
@@ -272,7 +282,7 @@
   <!-- 6: WRAP-UP -->
   <div class="slide" data-notes="notes-6">
     <div class="kicker">Summary</div>
-    <h1 class="slide-h" style="font-size:clamp(21px,2.9vw,34px)">Six steps forward, six that didn't make it</h1>
+    <h1 class="slide-h" style="font-size:clamp(21px,2.9cqw,34px)">Six steps forward, six that didn't make it</h1>
     <div class="recap-table">
       <div class="recap-row">
         <div class="recap-step">v_router &mdash; per-shape dispatch</div>
@@ -362,15 +372,16 @@
   <div class="notes-kicker">Speaker notes</div>
   <div class="notes-text" id="notesText"></div>
 </div>
+</div>
 
 <script>
 const NOTES = {
-  "notes-1": "Our team split the work into two layers. Jing Yen and Brandon built the implementation side: the agent loop, the candidate kernels, and the benchmarking infrastructure. Shi Xian led research: problem analysis, the review process, and the tech report.",
-  "notes-2": "Track 3 asks for a faster GPU implementation of a fixed Transformer block — the standard pattern on the right, self-attention and feed-forward, each with a residual connection and LayerNorm. The rules are simple: match the organizer's reference within a per-element tolerance, across fourteen published input shapes, or the speedup doesn't count.",
-  "notes-3": "We started on our university's shared A100 cluster, but the queue became the actual bottleneck — multi-hour waits between runs. We moved to RunPod, provisioning A100-SXM4-80GB instances on demand and tearing them down after each benchmark. One spec worth calling out: FlashAttention is only eligible at fp16 on this card for our shapes — zero of fourteen at fp32, all fourteen once we route through fp16 — which is exactly why precision routing matters later.",
-  "notes-4": "This is a self-improving multi-agent loop, six phases across two agents, sharing no state except two git-tracked files. The research agent plans a direction, an adversarial review checks it, and the two reconcile — that's phases one through three. The implementation agent executes one candidate, verifies it against the correctness gate, and logs the result — phases four through six. The next iteration's plan reads that same log, so the loop actually improves itself over time instead of repeating blind.",
-  "notes-5": "Starting from the unoptimized reference at 1x, six real steps got us to 6.54x geomean. Each box here is the actual spread across all thirteen shapes, not just the headline number — some shapes gain much more than others, and that spread is real too. Per-shape dispatch, fp16 plus a fused kernel on the heaviest shapes, an autotuned kernel config that also fixed a shape that previously never finished, one specific shape found badly mis-routed, a systematic recheck that found five more shapes on a stale route, and a final re-run to attach full correctness evidence to the result.",
-  "notes-6": "Ranking the six steps by what they actually bought us: the fp16-and-fused-kernel change and the two re-routing passes were the real speed wins. The autotune-and-shape-14 step barely moved the aggregate but unblocked a shape that never completed before. The last step wasn't about speed at all — it closed a gap in our own evidence. And six other ideas didn't survive contact with the real system — most rejected outright, one narrowed to just the shapes it actually helps. All of them are understood, not just abandoned.",
+  "notes-1": "Our team split the work into two layers.\n\nJing Yen and Brandon built the implementation side — the agent loop, the candidate kernels, the benchmarking infrastructure.\n\nShi Xian led research — problem analysis, the review process, the tech report.",
+  "notes-2": "Track 3 asks for a faster GPU implementation of a fixed Transformer block.\n\nThat's the pattern on the right — self-attention and feed-forward, each with a residual connection and LayerNorm.\n\nThe rule is simple: match the organizer's reference within a per-element tolerance, across fourteen published shapes. Or the speedup doesn't count.",
+  "notes-3": "We started on our university's shared A100 cluster.\n\nBut the queue became the actual bottleneck — multi-hour waits between runs.\n\nSo we moved to RunPod. A100-SXM4-80GB instances, on demand, torn down after every benchmark.\n\nOne spec worth calling out — FlashAttention only turns on at fp16 here. Zero of fourteen shapes at fp32. All fourteen once we route through fp16. That's exactly why precision routing matters later.",
+  "notes-4": "This is a self-improving multi-agent loop.\n\nSix phases, two agents, sharing no state except two git-tracked files.\n\nThe research agent plans a direction, an adversarial review checks it, the two reconcile. That's phases one through three.\n\nThe implementation agent executes one candidate, verifies it against the correctness gate, logs the result. Phases four through six.\n\nAnd the next iteration's plan reads that same log — so the loop actually improves itself over time. It doesn't just repeat blind.",
+  "notes-5": "Starting from the unoptimized reference, at 1x.\n\nSix real steps got us to 6.54x geomean.\n\nEach box here is the actual spread across all thirteen shapes — not just the headline number. Some shapes gain much more than others. That spread is real too.\n\nPer-shape dispatch. Fp16 plus a fused kernel on the heaviest shapes. An autotuned kernel config that also fixed a shape that previously never finished. One specific shape found badly mis-routed. A systematic recheck that found five more shapes on a stale route. And a final re-run to attach full correctness evidence to the result.",
+  "notes-6": "Ranking the six steps by what they actually bought us.\n\nThe fp16-and-fused-kernel change, and the two re-routing passes — those were the real speed wins.\n\nThe autotune-and-shape-14 step barely moved the aggregate. But it unblocked a shape that never completed before.\n\nThe last step wasn't about speed at all — it closed a gap in our own evidence.\n\nAnd six other ideas didn't survive contact with the real system. Most rejected outright. One narrowed to just the shapes it actually helps.\n\nAll of them understood, not just abandoned.",
 };
 
 // ---- ECharts palette (light only) ----
@@ -386,10 +397,10 @@ let charts = [];
 // organizer's baseline, trivially 1x against itself), v_router (RunPod
 // baseline), router2_amp_cg_confirm (v_router2 plain), iter 55,
 // router2_s13amp_fullsweep (shape-13-only fix), iter 58, iter 61.
-// [min, Q1, median, Q3, max] computed from the 13 per-shape values; null
-// skips the box (the reference point has no spread, so no box to draw).
+// [min, Q1, median, Q3, max] computed from the 13 per-shape values. The
+// reference point is trivially [1,1,1,1,1] -- every shape vs itself is 1x.
 const BOX_DATA = [
-  null,
+  [1, 1, 1, 1, 1],
   [1.289, 2.056, 2.362, 4.390, 6.626],
   [1.831, 3.474, 4.571, 7.958, 10.902],
   [1.810, 3.362, 4.892, 7.702, 11.520],
