@@ -313,7 +313,7 @@ layer (T7 + T15). Shape 14 is excluded from this sweep for a different reason
 than memory — it *runs* (§8), but has no reference to compare against, so it
 cannot be scored on this correctness-gated table at all.
 
-Aggregates: **median 3.71x, geometric mean 4.02x** (RunPod A100-SXM4-80GB, journal iter 61, full per-shape evidence) — over the 13 shapes with a reference. This was our
+Aggregates: **median 3.71x, geometric mean 4.02x** (SoC cluster A100-80, journal iter ~42-52) — over the 13 shapes with a reference. This was our
 reported number through iter 52; §5b below has the current headline
 (5.40x/6.54x, RunPod, now our canonical device).
 

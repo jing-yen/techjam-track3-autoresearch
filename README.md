@@ -135,7 +135,7 @@ bash scripts/capture_env.sh > docs/environment.txt
 
 # 4. The headline result: all 13 shapes with a reference, on GPU (shape 14
 #    has no reference -- see Limitations -- run it separately, --shapes 14).
-python3 runner.py --candidates candidates/v_router2_autotuned.py --shapes all --dtype float32
+python3 runner.py --candidates candidates/v_router2_autotuned.py --shapes all --dtype float32 --mode local
 
 # 5. Reproduce a single shape through the organizer's own script, unmodified,
 #    as an independent check that our harness agrees with it. Example, shape 1:
