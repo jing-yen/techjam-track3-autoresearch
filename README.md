@@ -159,13 +159,12 @@ organizer's script is worthless; they must match.
 13/13 correct, worst max_abs 0.00176 (shape 8), full per-shape correctness
 margins recorded, official timing protocol (warmup 20, repeats 100, rounds
 3, alternating order) — journal iter 61, RunPod pod `fzbwqgylwr24eo`. This
-is the reported number. The "Turn-by-turn progress" chart and per-shape
-table right below are the earlier, SoC-cluster-confirmed history (through
-iter 42, 2.98x median / 3.81x geomean, later extended to 3.71x/4.02x at
-iter 52) kept as-is for that record's own internal consistency, from when
-the SoC A100-80 cluster was our canonical device — see "What changed after
-iter 42" further down for the full account, including why the canonical
-device changed.
+is the reported number. The "Turn-by-turn progress" chart right below is
+the earlier, SoC-cluster-confirmed history (through iter 42, 2.98x median /
+3.81x geomean, later extended to 3.71x/4.02x at iter 52), from when the SoC
+A100-80 cluster was our canonical device — see "What changed after iter 42"
+further down for the full account, including why the canonical device
+changed and the current per-shape breakdown.
 
 Full environment in `docs/environment.txt`. Raw data in `journal.jsonl` —
 every number in this README is a real measured run, not an estimate. No
@@ -236,40 +235,6 @@ residual+norm boundaries per layer, and the other was measured at 19% of
 one shape's CUDA time — extending the same proven kernel to that boundary
 moved exactly the 3 shapes it touches (#6/#8/#13, +17%/+4%/+13%) and
 nothing else, which is what "an unfused-kernel fix" should look like.
-
-| # | B | S | d | H | passed | baseline ms | ours ms | speedup | max_abs |
-|--|--|--|--|--|--|--|--|--|--|
-| 1 | 64 | 128 | 128 | 4 | ✅ | 2.591 | 0.527 | **4.92x** | 0.00143 |
-| 2 | 1 | 128 | 128 | 4 | ✅ | 2.564 | 0.183 | **13.98x** | 0.00089 |
-| 3 | 4 | 128 | 128 | 4 | ✅ | 2.561 | 0.189 | **13.57x** | 0.00084 |
-| 4 | 16 | 128 | 128 | 4 | ✅ | 2.555 | 0.268 | **9.54x** | 0.00095 |
-| 5 | 128 | 128 | 128 | 4 | ✅ | 2.667 | 0.735 | **3.63x** | 0.00149 |
-| 6 | 10000 | 128 | 128 | 4 | ✅ | 177.169 | 43.922 | **4.03x** | 0.00168 |
-| 7 | 64 | 128 | 32 | 4 | ✅ | 2.547 | 0.334 | **7.63x** | 0.00157 |
-| 8 | 64 | 128 | 1024 | 4 | ✅ | 7.333 | 4.040 | **1.81x** | 0.00176 |
-| 9 | 64 | 128 | 128 | 1 | ✅ | 2.336 | 0.481 | **4.86x** | 0.00114 |
-| 10 | 64 | 128 | 128 | 2 | ✅ | 2.589 | 0.479 | **5.40x** | 0.00099 |
-| 11 | 64 | 128 | 128 | 16 | ✅ | 3.369 | 0.630 | **5.34x** | 0.00128 |
-| 12 | 64 | 32 | 128 | 4 | ✅ | 2.551 | 0.227 | **11.24x** | 0.00114 |
-| 13 | 64 | 1024 | 128 | 4 | ✅ | 41.270 | 2.925 | **14.11x** | 0.00146 |
-| 14 | 32 | 100000 | 1024 | 16 | runs, no reference | — | — | — | — |
-
-**Median speedup 5.40x, geometric mean 6.54x** (RunPod A100-SXM4-80GB, journal iter 61, full per-shape evidence) — across all 13 shapes that produced a reference
-(includes shape 6, confirmed feasible in S4 — the sweep now covers every
-official shape except #14). All 13 pass the correctness gate; worst max_abs
-0.00176 (shape 8), still under the 0.002 tolerance, with TF32 enabled on
-every route except `compile` (S1), fp16 `autocast` on #6/#8/#13 (T6), and a
-custom Triton kernel fusing the residual-add into the following LayerNorm at
-BOTH boundaries per layer on the `best`/`amp` routes (T7 + T15).
-
-> **This was our reported number through iter 52 — since superseded.** The
-> project's canonical device changed from the SoC A100-80 PCIe to RunPod
-> A100-SXM4-80GB (explicit team decision, driven by SoC queue congestion —
-> see "What changed after iter 42" below). On RunPod,
-> `candidates/v_router2_autotuned.py` measures **5.40x / 6.54x**, GPU-
-> confirmed with full per-shape correctness margins (journal iter 61). That
-> is now the reported number; this SoC table is kept as historical record of
-> the project's prior canonical device, not retracted.
 
 ## What changed after iter 42 (journal iter 55-61) — and why the canonical device changed
 
