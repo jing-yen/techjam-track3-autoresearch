@@ -48,7 +48,7 @@
   h2.slide-h2 { font-size: clamp(16px, 1.8cqw, 20px); font-weight: 400; color: var(--text-secondary); margin: 0 0 18px; line-height: 1.5; max-width: 68ch; }
   p.slide-p { font-size: clamp(15px, 1.55cqw, 18px); color: var(--text-secondary); line-height: 1.6; max-width: 62ch; }
 
-  .chart-box { width: min(1150px, 84cqw); height: min(46cqh, 440px); margin-top: 1cqh; }
+  .chart-box { width: min(1150px, 84cqw); height: min(60cqh, 560px); margin-top: 1cqh; }
 
   .gate-pill { display: inline-flex; align-items: center; gap: 8px; background: var(--accent-wash); color: var(--accent); border-radius: 999px; padding: 7px 16px; font-family: "IBM Plex Mono", monospace; font-size: clamp(11px,1.15cqw,13px); font-weight: 600; margin-top: 12px; }
 
@@ -73,9 +73,9 @@
   /* Two-column slides (objective + hardware) */
   .hw-row { display: flex; align-items: center; gap: 5%; margin-top: 2cqh; }
   .hw-left { flex: 0 0 52%; }
-  .hw-right { flex: 1; display: flex; align-items: center; justify-content: center; flex-direction: column; }
-  .obj-right { flex: 1; display: flex; align-items: center; justify-content: center; flex-direction: column; }
-  .obj-diagram { width: 100%; max-width: 380px; border-radius: 8px; border: 1px solid var(--grid); box-shadow: 0 6px 20px rgba(0,0,0,0.07); }
+  .hw-right { flex: 1; min-width: 0; display: flex; align-items: center; justify-content: center; flex-direction: column; padding-right: 2cqw; }
+  .obj-right { flex: 1; min-width: 0; display: flex; align-items: center; justify-content: center; flex-direction: column; padding-right: 2cqw; }
+  .obj-diagram { width: 100%; max-width: 300px; border-radius: 8px; border: 1px solid var(--grid); box-shadow: 0 6px 20px rgba(0,0,0,0.07); }
   .obj-caption { text-align: center; font-family: "IBM Plex Mono", monospace; font-size: 10px; color: var(--text-muted); margin-top: 8px; }
   .spec-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-top: 2.2cqh; }
   .spec-tile { background: var(--surface-2); border-radius: 12px; padding: 10px 12px; }
@@ -85,7 +85,7 @@
   .gpu-caption { text-align: center; font-family: "IBM Plex Mono", monospace; font-size: 11px; color: var(--text-muted); margin-top: 10px; letter-spacing: 0.03em; }
 
   /* Architecture system diagram */
-  .arch-wrap { margin-top: 1cqh; max-width: 1150px; }
+  .arch-wrap { margin-top: 1cqh; max-width: 980px; }
   .arch-svg { width: 100%; height: auto; }
   .arch-caption { font-size: clamp(12.5px,1.3cqw,14.5px); color: var(--text-muted); margin-top: 1.2cqh; max-width: 84ch; line-height: 1.5; }
   .model-row { display: flex; align-items: center; gap: 10px; margin-top: 1.2cqh; }
@@ -133,11 +133,13 @@
   .notes-btn { font-family: "IBM Plex Mono", monospace; font-size: 11px; color: var(--text-muted); background: transparent; border: 1px solid var(--grid); border-radius: 999px; padding: 5px 12px; cursor: pointer; margin-left: 4px; }
   .notes-btn.on { color: var(--accent); border-color: var(--accent); }
 
+  /* Lives outside #stage on purpose -- fixed to the real viewport, not the
+     16:9 frame, so it never appears inside a screen recording of the stage. */
   #notesPanel {
-    position: absolute; left: 0; right: 0; bottom: 0; background: var(--surface-2);
-    border-top: 1px solid var(--grid); padding: 20px 8cqw 60px;
-    transform: translateY(100%); transition: transform 0.3s ease; z-index: 15;
-    max-height: 34cqh; overflow-y: auto;
+    position: fixed; left: 0; right: 0; bottom: 0; background: var(--surface-2);
+    border-top: 1px solid var(--grid); padding: 20px 8vw 30px;
+    transform: translateY(100%); transition: transform 0.3s ease; z-index: 50;
+    max-height: 30vh; overflow-y: auto;
   }
   #notesPanel.open { transform: translateY(0); }
   .notes-kicker { font-family: "IBM Plex Mono", monospace; font-size: 11px; color: var(--accent); text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 8px; }
@@ -367,11 +369,11 @@
   <span class="nav-label" id="navLabel">1/6</span>
   <button class="notes-btn" id="notesBtn">notes</button>
 </div>
+</div>
 
 <div id="notesPanel">
   <div class="notes-kicker">Speaker notes</div>
   <div class="notes-text" id="notesText"></div>
-</div>
 </div>
 
 <script>
